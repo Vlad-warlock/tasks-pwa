@@ -128,7 +128,7 @@ export function initTactile3D(isEnabledFn) {
       if (activeCard) { resetCard(activeCard); activeCard = null; }
       return;
     }
-    const card = e.target.closest('.task-card, .dash-card');
+    const card = e.target.closest('.task-card, .dash-sphere-card');
     if (!card || card.classList.contains('is-dragging')) {
       if (activeCard) { resetCard(activeCard); activeCard = null; }
       return;

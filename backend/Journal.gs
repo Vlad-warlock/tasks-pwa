@@ -8,6 +8,7 @@ const JOURNAL_SHEET_NAME = 'Щоденник';
 const JOURNAL_CONFIG_KEY = '__CONFIG__';
 const PROP_JOURNAL_HABITS = 'JOURNAL_HABITS';
 const PROP_JOURNAL_MONTH_FOCUS = 'JOURNAL_MONTH_FOCUS';
+const PROP_JOURNAL_MONTH_REVIEW = 'JOURNAL_MONTH_REVIEW';
 const JOURNAL_HEADERS = ['Дата', 'Оцінка', 'Фокус дня', 'Звички', 'Що вдалося', 'Що заважало', 'Фокус місяця'];
 const JOURNAL_COL_WIDTHS = [110, 75, 220, 240, 260, 260, 220];
 
@@ -65,14 +66,15 @@ function sanitizeHabitsList_(raw) {
   return list.length ? list : cloneDefaultHabits_();
 }
 
-function sanitizeMonthFocusMap_(raw) {
+function sanitizeMonthTextMap_(raw, maxLen) {
+  const limit = maxLen || 1500;
   const out = {};
   if (!raw || typeof raw !== 'object') return out;
   const keys = Object.keys(raw);
   for (let i = 0; i < keys.length; i++) {
     const k = String(keys[i] || '').trim();
     if (!/^\d{4}-\d{2}$/.test(k)) continue;
-    const val = String(raw[k] || '').trim().slice(0, 300);
+    const val = String(raw[k] || '').trim().slice(0, limit);
     if (val) out[k] = val;
   }
   return out;
@@ -87,7 +89,7 @@ function readLegacyConfigFromSheet_(sheet) {
     let habits = null;
     let monthFocus = null;
     try { if (rows[i][3]) habits = sanitizeHabitsList_(JSON.parse(String(rows[i][3]))); } catch (_) {}
-    try { if (rows[i][6]) monthFocus = sanitizeMonthFocusMap_(JSON.parse(String(rows[i][6]))); } catch (_) {}
+    try { if (rows[i][6]) monthFocus = sanitizeMonthTextMap_(JSON.parse(String(rows[i][6])), 1500); } catch (_) {}
     return { row: i + 2, habits: habits, monthFocus: monthFocus };
   }
   return null;
@@ -97,10 +99,13 @@ function loadJournalMeta_(sheetOpt) {
   const props = PropertiesService.getScriptProperties();
   const rawHabits = props.getProperty(PROP_JOURNAL_HABITS);
   const rawFocus = props.getProperty(PROP_JOURNAL_MONTH_FOCUS);
+  const rawReview = props.getProperty(PROP_JOURNAL_MONTH_REVIEW);
   let habits = null;
   let monthFocus = null;
+  let monthReview = null;
   try { if (rawHabits) habits = sanitizeHabitsList_(JSON.parse(rawHabits)); } catch (_) {}
-  try { if (rawFocus) monthFocus = sanitizeMonthFocusMap_(JSON.parse(rawFocus)); } catch (_) {}
+  try { if (rawFocus) monthFocus = sanitizeMonthTextMap_(JSON.parse(rawFocus), 1500); } catch (_) {}
+  try { if (rawReview) monthReview = sanitizeMonthTextMap_(JSON.parse(rawReview), 1500); } catch (_) {}
 
   if ((!habits || !monthFocus) && sheetOpt) {
     const legacy = readLegacyConfigFromSheet_(sheetOpt);
@@ -111,14 +116,16 @@ function loadJournalMeta_(sheetOpt) {
   }
   return {
     habits: habits || cloneDefaultHabits_(),
-    monthFocus: monthFocus || {}
+    monthFocus: monthFocus || {},
+    monthReview: monthReview || {}
   };
 }
 
-function saveJournalMetaProps_(habits, monthFocus) {
+function saveJournalMetaProps_(habits, monthFocus, monthReview) {
   const props = PropertiesService.getScriptProperties();
   props.setProperty(PROP_JOURNAL_HABITS, JSON.stringify(habits));
   props.setProperty(PROP_JOURNAL_MONTH_FOCUS, JSON.stringify(monthFocus));
+  props.setProperty(PROP_JOURNAL_MONTH_REVIEW, JSON.stringify(monthReview || {}));
 }
 
 function habitTokensToIds_(cellText, habits) {
@@ -183,7 +190,7 @@ function migrateLegacyJournalIfNeeded_(sheet) {
   const legacy = readLegacyConfigFromSheet_(sheet);
   if (!legacy) return;
   const meta = loadJournalMeta_(sheet);
-  saveJournalMetaProps_(meta.habits, meta.monthFocus);
+  saveJournalMetaProps_(meta.habits, meta.monthFocus, meta.monthReview);
   sheet.deleteRow(legacy.row);
   formatJournalSheet_(sheet);
   rewriteSheetReadableRows_(sheet, meta.habits, meta.habits, meta.monthFocus);
@@ -194,7 +201,7 @@ function readJournalPayload_(ss) {
   const sheet = doc.getSheetByName(JOURNAL_SHEET_NAME);
   const meta = loadJournalMeta_(sheet);
   if (!sheet || sheet.getLastRow() < 2) {
-    return { habits: meta.habits, monthFocus: meta.monthFocus, entries: {} };
+    return { habits: meta.habits, monthFocus: meta.monthFocus, monthReview: meta.monthReview, entries: {} };
   }
 
   const tz = Session.getScriptTimeZone();
@@ -219,7 +226,7 @@ function readJournalPayload_(ss) {
       blockers: String(r[5] || '')
     };
   }
-  return { habits: meta.habits, monthFocus: meta.monthFocus, entries: entries };
+  return { habits: meta.habits, monthFocus: meta.monthFocus, monthReview: meta.monthReview, entries: entries };
 }
 
 function handleSaveJournalDay_(ss, payload) {
@@ -276,10 +283,13 @@ function handleSaveJournalMeta_(ss, payload) {
     ? sanitizeHabitsList_(payload.habits)
     : prevMeta.habits;
   const nextMonthFocus = payload && payload.monthFocus !== undefined
-    ? sanitizeMonthFocusMap_(payload.monthFocus)
+    ? sanitizeMonthTextMap_(payload.monthFocus, 1500)
     : prevMeta.monthFocus;
+  const nextMonthReview = payload && payload.monthReview !== undefined
+    ? sanitizeMonthTextMap_(payload.monthReview, 1500)
+    : prevMeta.monthReview;
 
-  saveJournalMetaProps_(nextHabits, nextMonthFocus);
+  saveJournalMetaProps_(nextHabits, nextMonthFocus, nextMonthReview);
   rewriteSheetReadableRows_(sheet, prevMeta.habits, nextHabits, nextMonthFocus);
   return readJournalPayload_(ss);
 }

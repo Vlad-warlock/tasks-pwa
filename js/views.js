@@ -7,7 +7,13 @@ import {
   getDeadlineInfo
 } from './utils.js';
 import { WEEKDAYS } from './notes-meta.js';
-import { computeJournalStats, createDefaultJournal } from './day-view.js';
+import { createDefaultJournal } from './day-view.js';
+import {
+  renderJournalTrendCard,
+  renderTagDonutCard,
+  renderRecordsAndExtremesCard,
+  renderMonthlySummaryCard
+} from './analytics.js';
 
 export function renderCalendarView(filteredTasks, state, nowInfo) {
   const year = state.calYear;
@@ -158,15 +164,17 @@ export function renderDashboardView(allTasks, state, nowInfo) {
     }).join('')
     : '<p class="dash-empty">Немає активних задач із призначеним дедлайном.</p>';
 
-  const rangeDays = state.dashRangeDays === 30 ? 30 : 14;
-  const journalCardHtml = renderJournalChartCard(state.journal || createDefaultJournal(), nowInfo.date, rangeDays);
+  const journal = state.journal || createDefaultJournal();
+  const archivedTasks = state.archivedTasks || [];
+  const dashRange = state.dashRange || '14';
+  const dashTagScope = state.dashTagScope || 'all';
 
   return `
     <div class="dashboard-view">
       <div class="dash-card dash-hero">
         <div class="dash-hero-head">
           <div>
-            <span class="dash-eyebrow">Загальний прогрес (як у «Канбан і Дашборд»)</span>
+            <span class="dash-eyebrow">Загальний прогрес (разом з Архівом: ${archivedTasks.length})</span>
             <h2 class="dash-hero-val">${progressPct}% <small>виконано (${doneCount} з ${total})</small></h2>
           </div>
           <div class="dash-kpis">
@@ -181,99 +189,24 @@ export function renderDashboardView(allTasks, state, nowInfo) {
 
       <div class="dash-spheres-grid">${sphereCardsHtml}</div>
 
-      ${journalCardHtml}
+      ${renderJournalTrendCard(journal, nowInfo.date, dashRange)}
 
       <div class="dash-bottom-grid">
+        ${renderTagDonutCard(allTasks, archivedTasks, nowInfo.date, dashTagScope)}
         <div class="dash-card">
           <h3 class="dash-section-title">Воронка статусів</h3>
           <div class="dash-bars">${statusRowsHtml}</div>
         </div>
+      </div>
+
+      ${renderRecordsAndExtremesCard(journal, allTasks, archivedTasks)}
+
+      <div class="dash-bottom-grid">
+        ${renderMonthlySummaryCard(journal, allTasks, archivedTasks, nowInfo.date)}
         <div class="dash-card">
           <h3 class="dash-section-title">Найближчі та прострочені дедлайни</h3>
           <div class="dash-upcoming-list">${upcomingHtml}</div>
         </div>
       </div>
-    </div>`;
-}
-
-function renderJournalChartCard(journal, todayStr, rangeDays) {
-  const stats = computeJournalStats(journal, todayStr, rangeDays);
-  const w = 600;
-  const h = 150;
-  const padL = 28;
-  const padR = 14;
-  const padT = 14;
-  const padB = 24;
-  const plotW = w - padL - padR;
-  const plotH = h - padT - padB;
-  const n = Math.max(2, stats.points.length);
-
-  const gridLevels = [2, 5, 8, 10];
-  const gridHtml = gridLevels.map((lvl) => {
-    const y = padT + plotH - ((lvl - 1) / 9) * plotH;
-    return `
-      <line x1="${padL}" y1="${y.toFixed(1)}" x2="${w - padR}" y2="${y.toFixed(1)}" stroke="#253246" stroke-dasharray="3 3" stroke-width="1"/>
-      <text x="${padL - 6}" y="${(y + 3.5).toFixed(1)}" text-anchor="end" fill="#5e708a" font-size="10">${lvl}</text>`;
-  }).join('');
-
-  const coords = stats.points.map((pt, idx) => {
-    const x = padL + (idx / (n - 1)) * plotW;
-    const y = pt.rating ? padT + plotH - ((pt.rating - 1) / 9) * plotH : null;
-    return { ...pt, x, y };
-  });
-
-  const valid = coords.filter((c) => c.y !== null);
-  let pathHtml = '';
-  if (valid.length >= 2) {
-    const linePts = valid.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
-    const areaPts = `${valid[0].x.toFixed(1)},${(padT + plotH).toFixed(1)} ${linePts} ${valid[valid.length - 1].x.toFixed(1)},${(padT + plotH).toFixed(1)}`;
-    pathHtml = `
-      <polygon points="${areaPts}" fill="rgba(16, 185, 129, 0.14)"/>
-      <polyline points="${linePts}" fill="none" stroke="#10b981" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
-  }
-
-  const dotsHtml = valid.map((c) => `
-    <circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="4" fill="#10b981" stroke="#0c1018" stroke-width="1.5">
-      <title>${escapeHtml(c.label)}: ${c.rating}/10</title>
-    </circle>`).join('');
-
-  const xLabelStep = rangeDays === 30 ? 5 : 2;
-  const xLabelsHtml = coords
-    .filter((_, idx) => idx === 0 || idx === coords.length - 1 || idx % xLabelStep === 0)
-    .map((c) => `<text x="${c.x.toFixed(1)}" y="${h - 6}" text-anchor="middle" fill="#5e708a" font-size="10">${escapeHtml(c.label)}</text>`)
-    .join('');
-
-  const chartBody = stats.ratedCount > 0
-    ? `
-      <div class="dash-chart-box">
-        <svg class="dash-chart-svg" viewBox="0 0 ${w} ${h}" role="img" aria-label="Графік оцінки дня 1–10">
-          ${gridHtml}
-          ${pathHtml}
-          ${dotsHtml}
-          ${xLabelsHtml}
-        </svg>
-      </div>`
-    : `
-      <div class="dash-chart-empty">
-        <span>Оцініть день від 1 до 10 у вкладці «День», щоб бачити динаміку.</span>
-        <button type="button" class="btn btn-secondary" data-action="jump-day">Перейти в «День»</button>
-      </div>`;
-
-  return `
-    <div class="dash-card">
-      <div class="dash-chart-head">
-        <div>
-          <h3 class="dash-section-title">Динаміка дня та звичок</h3>
-        </div>
-        <div class="dash-chart-kpis">
-          <span class="dash-mini-kpi">Оцінка: <strong>${stats.avgRating ? `${stats.avgRating} / 10` : '—'}</strong></span>
-          <span class="dash-mini-kpi">Звички: <strong>${stats.habitPct}%</strong></span>
-          <div class="dash-range-tabs" role="group" aria-label="Період графіка">
-            <button type="button" class="dash-range-btn${rangeDays === 14 ? ' is-active' : ''}" data-action="dash-range" data-range="14">14 дн</button>
-            <button type="button" class="dash-range-btn${rangeDays === 30 ? ' is-active' : ''}" data-action="dash-range" data-range="30">30 дн</button>
-          </div>
-        </div>
-      </div>
-      ${chartBody}
     </div>`;
 }

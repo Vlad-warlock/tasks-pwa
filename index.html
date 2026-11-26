@@ -119,14 +119,20 @@
       </div>
 
       <nav class="status-tabs" id="statusTabs" aria-label="Колонки статусу">
-        <button type="button" class="status-tab" data-status="Беклог">
-          <span>Беклог</span><span class="tab-badge" data-status-count="Беклог">0</span>
+        <button type="button" class="status-tab" data-status="Sort">
+          <span>Sort</span><span class="tab-badge" data-status-count="Sort">0</span>
         </button>
-        <button type="button" class="status-tab" data-status="Цей тиждень">
-          <span>Цей тиждень</span><span class="tab-badge" data-status-count="Цей тиждень">0</span>
+        <button type="button" class="status-tab" data-status="Short">
+          <span>Short</span><span class="tab-badge" data-status-count="Short">0</span>
         </button>
-        <button type="button" class="status-tab is-active" data-status="В роботі">
-          <span>В роботі</span><span class="tab-badge" data-status-count="В роботі">0</span>
+        <button type="button" class="status-tab" data-status="Mid">
+          <span>Mid</span><span class="tab-badge" data-status-count="Mid">0</span>
+        </button>
+        <button type="button" class="status-tab" data-status="Long">
+          <span>Long</span><span class="tab-badge" data-status-count="Long">0</span>
+        </button>
+        <button type="button" class="status-tab is-active" data-status="Фокус">
+          <span>Фокус</span><span class="tab-badge" data-status-count="Фокус">0</span>
         </button>
         <button type="button" class="status-tab" data-status="Готово">
           <span>Готово</span><span class="tab-badge" data-status-count="Готово">0</span>
@@ -182,9 +188,11 @@
           <div class="field">
             <label for="fieldStatus">Статус</label>
             <select id="fieldStatus">
-              <option value="Беклог">Беклог</option>
-              <option value="Цей тиждень">Цей тиждень</option>
-              <option value="В роботі" selected>В роботі</option>
+              <option value="Sort">Sort</option>
+              <option value="Short">Short</option>
+              <option value="Mid">Mid</option>
+              <option value="Long">Long</option>
+              <option value="Фокус" selected>Фокус</option>
               <option value="Готово">Готово</option>
             </select>
           </div>

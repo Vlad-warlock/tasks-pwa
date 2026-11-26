@@ -9,6 +9,7 @@ import {
   toggleHabitForDate,
   updateDayEntryFields,
   updateMonthFocus,
+  updateMonthReview,
   addCustomHabit,
   renameCustomHabit,
   toggleHabitActive,
@@ -36,7 +37,8 @@ export function renderFocusBanner(state, nowInfo) {
   const todayEntry = journal.entries[nowInfo.date];
   const dayFocus = String(todayEntry?.focus || '').trim();
   const ymKey = nowInfo.date.slice(0, 7);
-  const monthFocus = String(journal.monthFocus[ymKey] || '').trim();
+  const rawMonthFocus = String(journal.monthFocus[ymKey] || '').trim();
+  const monthFirstLine = rawMonthFocus.split(/\r?\n/).map((s) => s.trim()).find(Boolean) || '';
 
   if (state.prefs?.hideFocusBanner) {
     return `
@@ -45,9 +47,9 @@ export function renderFocusBanner(state, nowInfo) {
       </div>`;
   }
 
-  const label = dayFocus ? 'Фокус дня' : monthFocus ? 'Фокус місяця' : 'Фокус дня';
-  const text = dayFocus || monthFocus || 'Задати головну ціль на сьогодні';
-  const isEmpty = !dayFocus && !monthFocus;
+  const label = dayFocus ? 'Фокус дня' : monthFirstLine ? 'Фокус місяця' : 'Фокус дня';
+  const text = dayFocus || monthFirstLine || 'Задати головну ціль на сьогодні';
+  const isEmpty = !dayFocus && !monthFirstLine;
 
   return `
     <div class="focus-banner">
@@ -146,6 +148,7 @@ export function renderDayView(state, nowInfo) {
   const monthTitle = MONTHS_FULL[monthIdx] || '';
   const entry = journal.entries[dateStr] || { date: dateStr, rating: null, focus: '', doneHabits: [], wins: '', blockers: '' };
   const monthFocusVal = journal.monthFocus[ymKey] || '';
+  const monthReviewVal = (journal.monthReview && journal.monthReview[ymKey]) || '';
 
   const activeHabits = journal.habits.filter((h) => h.active !== false);
   const doneSet = new Set(entry.doneHabits || []);
@@ -210,11 +213,17 @@ export function renderDayView(state, nowInfo) {
         <div class="day-focus-grid">
           <div class="field">
             <label for="dayMonthFocusInput">Фокус місяця (${escapeHtml(monthTitle)})</label>
-            <input type="text" id="dayMonthFocusInput" data-day-field="monthFocus" data-ym="${ymKey}" value="${escapeHtml(monthFocusVal)}" placeholder="1 головна ціль на місяць..." autocomplete="off">
+            <textarea id="dayMonthFocusInput" rows="3" data-day-field="monthFocus" data-ym="${ymKey}" placeholder="3–5 головних цілей місяця з нового рядка...">${escapeHtml(monthFocusVal)}</textarea>
           </div>
-          <div class="field">
-            <label for="dayFocusInput">Фокус дня</label>
-            <input type="text" id="dayFocusInput" data-day-field="focus" value="${escapeHtml(entry.focus)}" placeholder="Найголовніший результат на сьогодні..." autocomplete="off">
+          <div class="field day-focus-right">
+            <div class="field">
+              <label for="dayFocusInput">Фокус дня</label>
+              <input type="text" id="dayFocusInput" data-day-field="focus" value="${escapeHtml(entry.focus)}" placeholder="Найголовніший результат на сьогодні..." autocomplete="off">
+            </div>
+            <details class="month-review-details"${monthReviewVal ? ' open' : ''}>
+              <summary>Висновки місяця (${escapeHtml(monthTitle)})</summary>
+              <textarea id="dayMonthReviewInput" rows="2" data-day-field="monthReview" data-ym="${ymKey}" placeholder="Підсумки та інсайти за місяць...">${escapeHtml(monthReviewVal)}</textarea>
+            </details>
           </div>
         </div>
       </section>
@@ -272,7 +281,7 @@ export function createDayEventController(board, appCtx) {
     if (!hasValidConfig(state.config)) return;
     enqueueOfflineOrSend(state, {
       action: 'saveJournalMeta',
-      fields: { habits: state.journal.habits, monthFocus: state.journal.monthFocus }
+      fields: { habits: state.journal.habits, monthFocus: state.journal.monthFocus, monthReview: state.journal.monthReview || {} }
     }, syncCallbacks);
   }
 
@@ -304,8 +313,9 @@ export function createDayEventController(board, appCtx) {
     const dayField = e.target.closest('[data-day-field]');
     if (dayField) {
       const key = dayField.dataset.dayField;
-      if (key === 'monthFocus') {
-        updateMonthFocus(state.journal, dayField.dataset.ym, dayField.value);
+      if (key === 'monthFocus' || key === 'monthReview') {
+        if (key === 'monthFocus') updateMonthFocus(state.journal, dayField.dataset.ym, dayField.value);
+        else updateMonthReview(state.journal, dayField.dataset.ym, dayField.value);
         saveJournal();
         clearTimeout(metaTimer);
         metaTimer = setTimeout(() => { metaTimer = null; sendMeta(); }, 600);
@@ -360,7 +370,15 @@ export function createDayEventController(board, appCtx) {
       else if (onToast) onToast('Залиште хоча б одну активну звичку', 'error');
       return;
     }
-    if (act === 'dash-range') { state.dashRangeDays = Number(actEl.dataset.range) === 30 ? 30 : 14; audioFx.playClick(); return render(); }
+    if (act === 'dash-range') { state.dashRange = actEl.dataset.range || '14'; audioFx.playClick(); return render(); }
+    if (act === 'dash-tag-scope') { state.dashTagScope = actEl.dataset.scope === 'month' ? 'month' : 'all'; audioFx.playClick(); return render(); }
+    if (act === 'day-select-jump') {
+      state.activeView = 'day';
+      if (actEl.dataset.date) state.dayDate = actEl.dataset.date;
+      audioFx.playClick();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return render();
+    }
     if (act === 'jump-day') { state.activeView = 'day'; state.dayDate = getTodayLocal().date; audioFx.playClick(); return render(); }
   }
 

@@ -7,6 +7,7 @@ import {
   getTodayLocal,
   isTaskOverdue,
   getDeadlineInfo,
+  normalizeStatus,
   sortColumnTasks
 } from './utils.js';
 import { parseTaskMeta, formatRepeatBadge } from './notes-meta.js';
@@ -257,9 +258,10 @@ export function renderAll(state) {
     if (state.activeTag) $('activeTagLabel').textContent = state.activeTag;
   }
 
+  const normalizedTasks = state.tasks.map((t) => ({ ...t, status: normalizeStatus(t.status, t.done ? 'Готово' : 'Sort') }));
   const bySphere = state.activeSphere === 'Усі'
-    ? state.tasks
-    : state.tasks.filter((t) => t.sphere === state.activeSphere);
+    ? normalizedTasks
+    : normalizedTasks.filter((t) => t.sphere === state.activeSphere);
 
   const active = bySphere.filter((t) => !t.done);
   const todayCount = active.filter((t) => t.deadline === nowInfo.date).length;
@@ -308,7 +310,7 @@ export function renderAll(state) {
     return;
   }
   if (state.activeView === 'dashboard') {
-    board.innerHTML = renderDashboardView(state.tasks, state, nowInfo);
+    board.innerHTML = renderDashboardView(normalizedTasks, state, nowInfo);
     return;
   }
 
@@ -327,14 +329,17 @@ export function renderAll(state) {
       ? `<div class="task-list">${colTasks.map((t) => renderTaskCard(t, metaMap.get(t.row), nowInfo)).join('')}</div>`
       : renderEmptyColumn(status, state);
 
-    const headAction = status === 'Готово' && colTasks.length > 0
-      ? `<button type="button" class="col-head-btn is-archive" data-action="archive-done" title="Перенести виконані в аркуш «Архів»">Архів (${colTasks.length})</button>`
-      : status !== 'Готово'
-        ? `<button type="button" class="col-head-btn" data-action="focus-inline-add" data-status="${escapeHtml(status)}" title="Швидко додати картку">+</button>`
-        : '';
+    const isDoneCol = status === 'Готово';
+    const doneDrawerCls = isDoneCol ? ` column-done-drawer${state.showDoneDesktop ? '' : ' is-collapsed'}` : '';
+    const headAction = isDoneCol
+      ? `<div class="col-done-actions">
+          <button type="button" class="col-head-btn" data-action="toggle-done-drawer">${state.showDoneDesktop ? 'Згорнути' : 'Показати'}</button>
+          ${colTasks.length > 0 ? `<button type="button" class="col-head-btn is-archive" data-action="archive-done" title="Перенести виконані в аркуш «Архів»">Архів (${colTasks.length})</button>` : ''}
+        </div>`
+      : `<button type="button" class="col-head-btn" data-action="focus-inline-add" data-status="${escapeHtml(status)}" title="Швидко додати картку">+</button>`;
 
     return `
-      <section class="column${status === state.activeStatus ? ' is-active' : ''}" data-column="${escapeHtml(status)}" data-drop-status="${escapeHtml(status)}">
+      <section class="column${status === state.activeStatus ? ' is-active' : ''}${doneDrawerCls}" data-column="${escapeHtml(status)}" data-drop-status="${escapeHtml(status)}">
         <div class="column-head">
           <h2 class="column-title">
             <span class="col-dot" data-col-dot="${escapeHtml(status)}"></span>

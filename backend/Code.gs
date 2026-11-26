@@ -15,8 +15,13 @@ const RATE_LIMIT_WINDOW_SEC = 300;
 const MIN_TEMPLATE_ROWS = 101; // Зберігаємо діапазон $C$2:$C$100 для формул «Канбан і Дашборд»
 
 const VALID_SPHERES = ['Крипта', 'Навчання', 'Життя'];
-const VALID_STATUSES = ['Беклог', 'Цей тиждень', 'В роботі', 'Готово'];
+const VALID_STATUSES = ['Sort', 'Short', 'Mid', 'Long', 'Фокус', 'Готово'];
 const VALID_PRIORITIES = ['Високий', 'Середній', 'Низький'];
+const LEGACY_STATUS_MAP = {
+  'Беклог': 'Sort',
+  'Цей тиждень': 'Mid',
+  'В роботі': 'Фокус'
+};
 
 function onOpen() {
   SpreadsheetApp.getUi()
@@ -105,6 +110,7 @@ function doPost(e) {
         ok: true,
         sheetUrl: ss.getUrl(),
         tasks: readTasks_(sheet),
+        archived: readArchivedSummary_(ss),
         journal: readJournalPayload_(ss)
       });
     } catch (err) {
@@ -145,7 +151,7 @@ function doPost(e) {
 
     if (action === 'archiveDone') {
       const archived = archiveCompletedTasks_(sheet);
-      return jsonResponse_({ ok: true, archived: archived, sheetUrl: sheetUrl, tasks: readTasks_(sheet) });
+      return jsonResponse_({ ok: true, archived: archived, archivedTasks: readArchivedSummary_(ss), sheetUrl: sheetUrl, tasks: readTasks_(sheet) });
     }
 
     if (action === 'syncCalendar') {
@@ -218,9 +224,9 @@ function handleCreate_(sheet, payload) {
 
   const sphere = sanitizeEnum_(payload.sphere, VALID_SPHERES, 'Життя');
   const priority = sanitizeEnum_(payload.priority, VALID_PRIORITIES, 'Середній');
-  const rawStatus = sanitizeEnum_(payload.status, VALID_STATUSES, 'В роботі');
+  const rawStatus = normalizeStatus_(payload.status, 'Sort');
   const synced = reconcileDoneStatus_(
-    Boolean(payload.done), rawStatus, false, 'В роботі',
+    Boolean(payload.done), rawStatus, false, 'Sort',
     payload.done !== undefined, payload.status !== undefined
   );
 
@@ -253,7 +259,7 @@ function handleUpdate_(sheet, payload) {
   const prevDone = toBool_(cur[0]);
   const prevSphere = String(cur[1] || '').trim() || 'Життя';
   const prevTask = String(cur[2] || '').trim();
-  const prevStatus = String(cur[3] || '').trim() || 'Беклог';
+  const prevStatus = normalizeStatus_(cur[3], 'Sort');
   const prevPriority = String(cur[4] || '').trim() || 'Середній';
   const prevDeadline = formatDateValue_(cur[5], tz);
   const prevTime = formatTimeValue_(cur[6], tz);
@@ -264,7 +270,7 @@ function handleUpdate_(sheet, payload) {
   const hasStatus = payload.status !== undefined;
   const synced = reconcileDoneStatus_(
     hasDone ? Boolean(payload.done) : prevDone,
-    hasStatus ? sanitizeEnum_(payload.status, VALID_STATUSES, prevStatus) : prevStatus,
+    hasStatus ? normalizeStatus_(payload.status, prevStatus) : prevStatus,
     prevDone, prevStatus, hasDone, hasStatus
   );
 
@@ -297,7 +303,7 @@ function handleUpdate_(sheet, payload) {
       const resetNotes = nextNotes.replace(/^(\s*-\s*)\[[xX]\]/gm, '$1[ ]');
       const newRow = findFirstEmptyRow_(sheet);
       writeTaskRow_(sheet, newRow, {
-        done: false, sphere: nextSphere, task: nextTask, status: 'Цей тиждень',
+        done: false, sphere: nextSphere, task: nextTask, status: 'Short',
         priority: nextPriority, deadline: nextDate, time: nextTime, notes: resetNotes, inCalendar: false
       });
       spawnedDate = nextDate;
@@ -464,7 +470,7 @@ function readTasks_(sheet) {
     const taskTitle = String(r[2] || '').trim();
     if (!taskTitle && !String(r[7] || '').trim()) continue;
     const rawDone = toBool_(r[0]);
-    const rawStatus = String(r[3] || '').trim() || (rawDone ? 'Готово' : 'Беклог');
+    const rawStatus = normalizeStatus_(r[3], rawDone ? 'Готово' : 'Sort');
     const done = rawDone || rawStatus === 'Готово';
     tasks.push({
       row: i + 2,
@@ -480,6 +486,28 @@ function readTasks_(sheet) {
     });
   }
   return tasks;
+}
+
+function readArchivedSummary_(ss) {
+  const doc = ss || SpreadsheetApp.getActiveSpreadsheet();
+  const arch = doc.getSheetByName(ARCHIVE_SHEET_NAME);
+  if (!arch || arch.getLastRow() < 2) return [];
+  const tz = Session.getScriptTimeZone();
+  const rows = arch.getRange(2, 1, arch.getLastRow() - 1, 7).getValues();
+  const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const title = String(r[2] || '').trim();
+    if (!title) continue;
+    out.push({
+      archivedDate: formatDateValue_(r[0], tz),
+      sphere: String(r[1] || '').trim() || 'Життя',
+      task: title,
+      deadline: formatDateValue_(r[4], tz),
+      notes: String(r[6] || '')
+    });
+  }
+  return out;
 }
 
 function createCalendarEvent_(item) {
@@ -565,11 +593,11 @@ function verifyExpectedTask_(sheet, rowInput, expectedTask) {
 }
 
 function reconcileDoneStatus_(nextDone, nextStatus, prevDone, prevStatus, hasDone, hasStatus) {
-  if (hasDone && !hasStatus) return nextDone ? { done: true, status: 'Готово' } : { done: false, status: prevStatus === 'Готово' ? 'В роботі' : prevStatus };
+  if (hasDone && !hasStatus) return nextDone ? { done: true, status: 'Готово' } : { done: false, status: prevStatus === 'Готово' ? 'Фокус' : prevStatus };
   if (hasStatus && !hasDone) return nextStatus === 'Готово' ? { done: true, status: 'Готово' } : { done: false, status: nextStatus };
   if (nextDone && !prevDone) return { done: true, status: 'Готово' };
   if (nextStatus === 'Готово' && prevStatus !== 'Готово') return { done: true, status: 'Готово' };
-  if (!nextDone && prevDone && nextStatus === 'Готово') return { done: false, status: 'В роботі' };
+  if (!nextDone && prevDone && nextStatus === 'Готово') return { done: false, status: 'Фокус' };
   if (nextStatus !== 'Готово' && prevStatus === 'Готово') return { done: false, status: nextStatus };
   return (nextDone || nextStatus === 'Готово') ? { done: true, status: 'Готово' } : { done: false, status: nextStatus };
 }
@@ -595,6 +623,12 @@ function normalizeTimeInput_(raw) {
   const m = String(raw || '').trim().match(/^(\d{1,2}):(\d{2})/);
   if (!m) return '';
   return String(Math.min(23, Math.max(0, Number(m[1])))).padStart(2, '0') + ':' + String(Math.min(59, Math.max(0, Number(m[2])))).padStart(2, '0');
+}
+
+function normalizeStatus_(raw, fallback) {
+  const clean = String(raw || '').trim();
+  const mapped = LEGACY_STATUS_MAP[clean] || clean;
+  return VALID_STATUSES.indexOf(mapped) !== -1 ? mapped : fallback;
 }
 
 function sanitizeEnum_(val, allowed, fallback) {

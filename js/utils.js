@@ -4,8 +4,19 @@ export const STORAGE_QUEUE = 'tasks_pwa_queue_v1';
 export const STORAGE_PREFS = 'tasks_pwa_prefs_v1';
 export const STORAGE_JOURNAL = 'tasks_pwa_journal_v1';
 
-// Класичний порядок воронки Trello зліва направо (як у вкладці «Канбан і Дашборд»)
-export const STATUS_COLUMNS = ['Беклог', 'Цей тиждень', 'В роботі', 'Готово'];
+// Порядок колонок за конвеєром: Sort -> Short -> Mid -> Long -> Фокус (+ згортане Готово)
+export const STATUS_COLUMNS = ['Sort', 'Short', 'Mid', 'Long', 'Фокус', 'Готово'];
+const LEGACY_STATUS_MAP = {
+  'Беклог': 'Sort',
+  'Цей тиждень': 'Mid',
+  'В роботі': 'Фокус'
+};
+
+export function normalizeStatus(raw, fallback = 'Sort') {
+  const clean = String(raw || '').trim();
+  const mapped = LEGACY_STATUS_MAP[clean] || clean;
+  return STATUS_COLUMNS.includes(mapped) ? mapped : fallback;
+}
 export const SPHERES = ['Усі', 'Крипта', 'Навчання', 'Життя'];
 export const PRIORITIES = ['Усі', 'Високий', 'Середній', 'Низький'];
 export const PRIORITY_WEIGHT = { 'Високий': 1, 'Середній': 2, 'Низький': 3 };
@@ -182,7 +193,7 @@ export function reconcileClientDoneStatus(done, status, prevDone, prevStatus, ch
   if (changedField === 'done') {
     return done
       ? { done: true, status: 'Готово' }
-      : { done: false, status: prevStatus === 'Готово' ? 'В роботі' : prevStatus };
+      : { done: false, status: prevStatus === 'Готово' ? 'Фокус' : prevStatus };
   }
   if (changedField === 'status') {
     return status === 'Готово' ? { done: true, status: 'Готово' } : { done: false, status };

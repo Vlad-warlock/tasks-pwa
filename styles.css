@@ -238,14 +238,16 @@ button, input, select, textarea { font: inherit; color: var(--text-main); color-
 .search-clear { position: absolute; right: 4px; width: 22px; height: 22px; border: none; background: transparent; color: var(--text-muted); font-size: 16px; cursor: pointer; }
 
 /* Мобільні вкладки статусу */
-.status-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; margin: 0 -4px; }
+.status-tabs { display: flex; overflow-x: auto; scrollbar-width: none; gap: 2px; margin: 0 -4px; }
+.status-tabs::-webkit-scrollbar { display: none; }
 .status-tabs.is-view-hidden { display: none !important; }
 .status-tab {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 8px 4px 9px;
+  padding: 8px 9px 9px;
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
@@ -279,9 +281,11 @@ button, input, select, textarea { font: inherit; color: var(--text-main); color-
 .column.is-drop-target { border-color: var(--sky) !important; background: rgba(56, 189, 248, 0.07) !important; }
 .column-head { display: none; }
 .col-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-.col-dot[data-col-dot="Беклог"] { background: #64748b; }
-.col-dot[data-col-dot="Цей тиждень"] { background: var(--sky); }
-.col-dot[data-col-dot="В роботі"] { background: var(--accent); box-shadow: 0 0 6px rgba(59, 130, 246, 0.5); }
+.col-dot[data-col-dot="Sort"] { background: #64748b; }
+.col-dot[data-col-dot="Short"] { background: var(--sky); }
+.col-dot[data-col-dot="Mid"] { background: var(--purple); }
+.col-dot[data-col-dot="Long"] { background: var(--amber); }
+.col-dot[data-col-dot="Фокус"] { background: var(--accent); box-shadow: 0 0 6px rgba(59, 130, 246, 0.5); }
 .col-dot[data-col-dot="Готово"] { background: var(--success); }
 .task-list { display: flex; flex-direction: column; gap: 8px; }
 

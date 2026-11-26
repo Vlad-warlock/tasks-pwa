@@ -3,6 +3,7 @@ import { STORAGE_QUEUE, loadJson, saveJson, safeApiUrl } from './utils.js';
 let mutationChain = Promise.resolve();
 let lastServerSnapshot = null;
 let lastJournalSnapshot = null;
+let lastArchivedSnapshot = null;
 
 export function setLastServerSnapshot(tasks) {
   lastServerSnapshot = Array.isArray(tasks) ? tasks : null;
@@ -58,8 +59,9 @@ export async function apiPost(config, payload) {
 export async function apiListTasks(config) {
   const data = await apiPost(config, { action: 'list' });
   const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+  const archived = Array.isArray(data.archived) ? data.archived : [];
   lastServerSnapshot = tasks;
-  return { tasks, sheetUrl: data.sheetUrl || '', journal: data.journal || null };
+  return { tasks, archived, sheetUrl: data.sheetUrl || '', journal: data.journal || null };
 }
 
 function buildItemPayload(item) {
@@ -138,6 +140,7 @@ export function flushQueue(state, callbacks) {
       try {
         const data = await apiPost(state.config, buildItemPayload(current));
         if (Array.isArray(data.tasks)) lastServerSnapshot = data.tasks;
+        if (Array.isArray(data.archivedTasks)) lastArchivedSnapshot = data.archivedTasks;
         if (data.journal) lastJournalSnapshot = data.journal;
         if (data.sheetUrl && callbacks.onSheetUrl) callbacks.onSheetUrl(data.sheetUrl);
 
@@ -186,6 +189,10 @@ export function flushQueue(state, callbacks) {
       if (lastJournalSnapshot && callbacks.onJournalUpdated) {
         callbacks.onJournalUpdated(lastJournalSnapshot);
         lastJournalSnapshot = null;
+      }
+      if (lastArchivedSnapshot && callbacks.onArchivedUpdated) {
+        callbacks.onArchivedUpdated(lastArchivedSnapshot);
+        lastArchivedSnapshot = null;
       }
       callbacks.onSyncIndicator('ok', 'Синхронізовано');
     }

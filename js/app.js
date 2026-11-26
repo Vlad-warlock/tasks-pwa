@@ -9,6 +9,7 @@ import {
   copyToClipboard,
   getTodayLocal,
   getOffsetDateStr,
+  normalizeStatus,
   reconcileClientDoneStatus
 } from './utils.js';
 import { normalizeJournal, createDayEventController } from './day-view.js';
@@ -45,6 +46,7 @@ const state = {
   config: loadJson(STORAGE_CONFIG, { url: '', pin: '', sheetUrl: '' }),
   prefs: loadJson(STORAGE_PREFS, { soundEnabled: true, fx3d: true }),
   tasks: [],
+  archivedTasks: [],
   pendingQueue: loadPendingQueue(),
   lastSyncAt: null,
   isInitialLoading: false,
@@ -52,13 +54,15 @@ const state = {
   activeSphere: 'Усі',
   activePriority: 'Усі',
   activeTag: '',
-  activeStatus: 'В роботі',
+  activeStatus: 'Фокус',
+  showDoneDesktop: false,
   calYear: nowInit.getFullYear(),
   calMonth: nowInit.getMonth(),
   journal: normalizeJournal(loadJson(STORAGE_JOURNAL, null)),
   dayDate: getTodayLocal().date,
   dayEditHabits: false,
-  dashRangeDays: 14,
+  dashRange: '14',
+  dashTagScope: 'all',
   quickFilter: 'all',
   searchQuery: '',
   editingRow: null,
@@ -73,7 +77,7 @@ let tempRowSeq = -1;
 let draggedRow = null;
 const pendingDeleteTimers = new Map();
 
-const saveCache = () => saveJson(STORAGE_CACHE, { tasks: state.tasks, lastSyncAt: state.lastSyncAt });
+const saveCache = () => saveJson(STORAGE_CACHE, { tasks: state.tasks, archivedTasks: state.archivedTasks, lastSyncAt: state.lastSyncAt });
 const saveJournalCache = () => saveJson(STORAGE_JOURNAL, state.journal);
 const render = () => renderAll(state);
 const findTaskByRow = (row) => state.tasks.find((t) => t.row === Number(row));
@@ -104,6 +108,9 @@ const syncCallbacks = {
     if (journal && !editingDay) state.journal = normalizeJournal(journal);
     saveJournalCache();
     if (!editingDay) render();
+  },
+  onArchivedUpdated: (archived) => {
+    if (Array.isArray(archived)) { state.archivedTasks = archived; saveCache(); render(); }
   }
 };
 
@@ -139,11 +146,12 @@ async function refreshFromServer(silent = false) {
   if (state.pendingQueue.length > 0) await flushQueue(state, syncCallbacks);
   setSyncIndicator('syncing', 'Оновлення даних...');
   try {
-    const { tasks: fresh, sheetUrl, journal } = await apiListTasks(state.config);
+    const { tasks: fresh, archived, sheetUrl, journal } = await apiListTasks(state.config);
     if (sheetUrl) updateStoredSheetUrl(sheetUrl);
     state.isInitialLoading = false;
     if (state.inFlightCount === 0 && state.pendingQueue.length === 0) {
       state.tasks = fresh;
+      if (Array.isArray(archived)) state.archivedTasks = archived;
       if (journal) { state.journal = normalizeJournal(journal); saveJournalCache(); }
       state.lastSyncAt = Date.now();
       saveCache();
@@ -347,6 +355,8 @@ function bindEvents() {
       else if (act === 'cal-next') { if (++state.calMonth > 11) { state.calMonth = 0; state.calYear++; } render(); }
       else if (act === 'cal-today') { const d = new Date(); state.calYear = d.getFullYear(); state.calMonth = d.getMonth(); render(); }
       else if (act === 'jump-sphere') { state.activeSphere = actEl.dataset.sphere; state.activeView = 'board'; audioFx.playClick(); render(); }
+      else if (act === 'jump-tag') { state.activeTag = actEl.dataset.tag || ''; state.activeView = 'board'; audioFx.playClick(); render(); }
+      else if (act === 'toggle-done-drawer') { state.showDoneDesktop = !state.showDoneDesktop; audioFx.playClick(); render(); }
       else dayCtrl.handleAction(act, actEl);
       return;
     }
@@ -427,7 +437,8 @@ function init() {
 
   const cached = loadJson(STORAGE_CACHE, null);
   if (cached && Array.isArray(cached.tasks)) {
-    state.tasks = cached.tasks;
+    state.tasks = cached.tasks.map((t) => ({ ...t, status: normalizeStatus(t.status, t.done ? 'Готово' : 'Sort') }));
+    state.archivedTasks = Array.isArray(cached.archivedTasks) ? cached.archivedTasks : [];
     state.lastSyncAt = cached.lastSyncAt || null;
   }
   if (hasValidConfig(state.config) && state.tasks.length === 0) state.isInitialLoading = true;

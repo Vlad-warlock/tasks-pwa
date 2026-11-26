@@ -8,6 +8,7 @@ import {
   safeApiUrl,
   safeSheetUrl,
   getOffsetDateStr,
+  normalizeStatus,
   reconcileClientDoneStatus
 } from './utils.js';
 import {
@@ -100,7 +101,7 @@ export function openTaskModal(ctx, task = null, opts = {}) {
   $('fieldRow').value = isEdit ? String(task.row) : '';
   $('fieldTask').value = isEdit ? task.task : '';
   $('fieldSphere').value = isEdit ? (task.sphere || 'Життя') : (state.activeSphere !== 'Усі' ? state.activeSphere : 'Життя');
-  $('fieldStatus').value = isEdit ? (task.status || 'В роботі') : (opts.defaultStatus || (state.activeStatus === 'Готово' ? 'В роботі' : state.activeStatus));
+  $('fieldStatus').value = isEdit ? normalizeStatus(task.status, 'Фокус') : (opts.defaultStatus || (state.activeStatus === 'Готово' ? 'Фокус' : state.activeStatus));
   $('fieldPriority').value = isEdit ? (task.priority || 'Середній') : (state.activePriority !== 'Усі' ? state.activePriority : 'Середній');
   $('fieldDeadline').value = isEdit ? (task.deadline || '') : (opts.defaultDate || '');
   $('fieldTime').value = isEdit ? (task.time || '') : '';
@@ -178,7 +179,7 @@ export function initModals(ctx) {
   $('fieldDone').addEventListener('change', (e) => {
     const st = $('fieldStatus');
     if (e.target.checked) st.value = 'Готово';
-    else if (st.value === 'Готово') st.value = 'В роботі';
+    else if (st.value === 'Готово') st.value = 'Фокус';
   });
   $('fieldStatus').addEventListener('change', (e) => { $('fieldDone').checked = e.target.value === 'Готово'; });
   $('fieldSoundEnabled').addEventListener('change', (e) => {
@@ -234,7 +235,7 @@ export function initModals(ctx) {
     });
 
     if (state.editingRow === null) {
-      const synced = reconcileClientDoneStatus(false, rawStatus, false, 'В роботі', 'status');
+      const synced = reconcileClientDoneStatus(false, rawStatus, false, 'Фокус', 'status');
       state.tasks.push({
         row: nextTempRow(), done: synced.done, sphere, task: taskTitle,
         status: synced.status, priority, deadline, time, notes: serializedNotes, inCalendar: wantCalendar

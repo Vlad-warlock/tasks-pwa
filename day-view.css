@@ -345,8 +345,88 @@
   color: var(--text-muted);
 }
 
+/* Висновки місяця, Donut тегів, Рекорди, Топ-5 та таблиця місяців */
+.day-focus-right { display: flex; flex-direction: column; gap: 8px; }
+.month-review-details {
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+}
+.month-review-details summary { font-size: 12.5px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
+.month-review-details[open] summary { margin-bottom: 8px; color: var(--text-main); }
+
+.dash-donut-layout { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.dash-donut-svg { width: 132px; height: 132px; flex-shrink: 0; }
+.donut-legend { flex: 1; min-width: 170px; display: flex; flex-direction: column; gap: 5px; }
+.donut-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.donut-legend-row:not(:disabled):hover { border-color: var(--border-strong); background: var(--bg-card-hover); }
+.donut-legend-row:disabled { cursor: default; }
+.donut-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.donut-tag-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-main); }
+.donut-tag-val { font-variant-numeric: tabular-nums; color: var(--text-muted); font-size: 11.5px; }
+
+.dash-records-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.dash-record-box {
+  padding: 9px 11px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dash-record-box span { font-size: 11.5px; color: var(--text-muted); }
+.dash-record-box strong { font-size: 19px; font-variant-numeric: tabular-nums; }
+.dash-record-box small { font-size: 11px; color: var(--text-dim); }
+
+.dash-extremes-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.extremes-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.extremes-title { font-size: 12.5px; font-weight: 650; }
+.extremes-title.is-good { color: #6ee7b7; }
+.extremes-title.is-bad { color: #fda4af; }
+.extremes-list { display: flex; flex-direction: column; gap: 5px; }
+.extreme-day-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 9px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  text-align: left;
+  cursor: pointer;
+}
+.extreme-day-btn:hover { border-color: var(--border-strong); background: var(--bg-card-hover); }
+.extreme-rank { width: 16px; font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.extreme-info { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; font-size: 12.5px; }
+.extreme-focus { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 11.5px; }
+.extreme-score { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.extreme-score.is-good { color: var(--success); }
+.extreme-score.is-bad { color: var(--danger); }
+
+.dash-table-wrap { width: 100%; max-width: 100%; overflow-x: auto; }
+.dash-month-table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.dash-month-table th, .dash-month-table td { padding: 7px 8px; border-bottom: 1px solid var(--border-color); text-align: left; white-space: nowrap; }
+.dash-month-table th { font-size: 11.5px; color: var(--text-muted); font-weight: 600; }
+.dash-table-tag { color: #7dd3fc; }
+
 @media (max-width: 720px) {
-  .day-focus-grid, .day-columns-grid { grid-template-columns: 1fr; }
+  .day-focus-grid, .day-columns-grid, .dash-records-grid, .dash-extremes-grid { grid-template-columns: 1fr; }
+  .dash-donut-layout { justify-content: center; }
   .rating-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .day-card { padding: 12px; }
   .day-date-title { min-width: 120px; font-size: 15px; }

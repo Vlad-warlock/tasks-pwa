@@ -12,8 +12,19 @@ export function createDefaultJournal() {
   return {
     habits: DEFAULT_HABITS.map((h) => ({ ...h })),
     monthFocus: {},
+    monthReview: {},
     entries: {}
   };
+}
+
+function normalizeMonthTextMap(raw) {
+  const out = {};
+  if (raw && typeof raw === 'object') {
+    for (const [k, v] of Object.entries(raw)) {
+      if (/^\d{4}-\d{2}$/.test(k) && String(v || '').trim()) out[k] = String(v).trim();
+    }
+  }
+  return out;
 }
 
 export function normalizeJournal(raw) {
@@ -27,12 +38,8 @@ export function normalizeJournal(raw) {
     const name = String(h.name || '').trim();
     if (id && name && !seen.has(id)) { seen.add(id); habits.push({ id, name, active: h.active !== false }); }
   }
-  const monthFocus = {};
-  if (raw.monthFocus && typeof raw.monthFocus === 'object') {
-    for (const [k, v] of Object.entries(raw.monthFocus)) {
-      if (/^\d{4}-\d{2}$/.test(k) && String(v || '').trim()) monthFocus[k] = String(v).trim();
-    }
-  }
+  const monthFocus = normalizeMonthTextMap(raw.monthFocus);
+  const monthReview = normalizeMonthTextMap(raw.monthReview);
   const entries = {};
   if (raw.entries && typeof raw.entries === 'object') {
     for (const [dateStr, val] of Object.entries(raw.entries)) {
@@ -43,7 +50,7 @@ export function normalizeJournal(raw) {
       entries[dateStr] = { date: dateStr, rating, focus: String(val.focus || ''), doneHabits, wins: String(val.wins || ''), blockers: String(val.blockers || '') };
     }
   }
-  return { habits: habits.length ? habits : createDefaultJournal().habits, monthFocus, entries };
+  return { habits: habits.length ? habits : createDefaultJournal().habits, monthFocus, monthReview, entries };
 }
 
 export function getOrCreateDayEntry(journal, dateStr) {
@@ -74,6 +81,13 @@ export function updateMonthFocus(journal, ymKey, text) {
   const clean = String(text || '').trim();
   if (clean) journal.monthFocus[ymKey] = clean;
   else delete journal.monthFocus[ymKey];
+}
+
+export function updateMonthReview(journal, ymKey, text) {
+  if (!journal.monthReview) journal.monthReview = {};
+  const clean = String(text || '').trim();
+  if (clean) journal.monthReview[ymKey] = clean;
+  else delete journal.monthReview[ymKey];
 }
 
 export function addCustomHabit(journal, name) {
@@ -119,17 +133,61 @@ export function computeHabitStreak(entries, habitId, todayStr) {
   return streak;
 }
 
-export function computeJournalStats(journal, todayStr, rangeDays = 14) {
+export function computeBestHabitStreak(journal) {
+  const datesByHabit = new Map();
+  for (const [d, entry] of Object.entries(journal.entries || {})) {
+    if (!entry || !Array.isArray(entry.doneHabits)) continue;
+    for (const hid of entry.doneHabits) {
+      if (!datesByHabit.has(hid)) datesByHabit.set(hid, []);
+      datesByHabit.get(hid).push(d);
+    }
+  }
+  let best = 0;
+  for (const dates of datesByHabit.values()) {
+    dates.sort();
+    let run = 0;
+    let prev = '';
+    for (const d of dates) {
+      if (d === prev) continue;
+      run = prev && shiftDateStr(prev, 1) === d ? run + 1 : 1;
+      if (run > best) best = run;
+      prev = d;
+    }
+  }
+  return best;
+}
+
+export function computeJournalStats(journal, todayStr, rangeMode = '14') {
   const activeHabits = journal.habits.filter((h) => h.active !== false);
   const activeIds = new Set(activeHabits.map((h) => h.id));
+  const mode = String(rangeMode || '14');
+  let dates = [];
+
+  if (mode === 'month') {
+    const dayNum = Number(todayStr.slice(8, 10)) || 1;
+    const prefix = todayStr.slice(0, 8);
+    for (let d = 1; d <= dayNum; d++) dates.push(`${prefix}${String(d).padStart(2, '0')}`);
+  } else if (mode === 'year') {
+    const yearPrefix = todayStr.slice(0, 4);
+    const yearDates = Object.keys(journal.entries || {}).filter((d) => d.startsWith(yearPrefix) && d <= todayStr).sort();
+    const startDate = yearDates[0] || `${yearPrefix}-01-01`;
+    let cur = startDate;
+    for (let guard = 0; guard < 366 && cur <= todayStr; guard++) {
+      dates.push(cur);
+      cur = shiftDateStr(cur, 1);
+    }
+  } else {
+    const rangeDays = mode === '30' ? 30 : 14;
+    for (let i = rangeDays - 1; i >= 0; i--) dates.push(shiftDateStr(todayStr, -i));
+  }
+
   const points = [];
   let ratingSum = 0;
   let ratedCount = 0;
   let habitDoneTotal = 0;
   let habitLoggedDays = 0;
 
-  for (let i = rangeDays - 1; i >= 0; i--) {
-    const d = shiftDateStr(todayStr, -i);
+  for (const d of dates) {
     const entry = journal.entries[d];
     const parts = d.split('-');
     const label = `${parts[2]}.${parts[1]}`;

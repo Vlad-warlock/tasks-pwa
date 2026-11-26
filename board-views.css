@@ -303,7 +303,7 @@ progress.tm-progress::-webkit-progress-value { background: var(--amber); border-
 
 @media (min-width: 960px) {
   .status-tabs { display: none !important; }
-  .board[data-view-mode="board"] { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: start; }
+  .board[data-view-mode="board"] { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; align-items: start; }
   .board[data-view-mode="board"] .column {
     display: flex;
     background: var(--bg-panel);
@@ -311,7 +311,27 @@ progress.tm-progress::-webkit-progress-value { background: var(--amber); border-
     border-radius: var(--radius);
     padding: 10px;
     min-height: 280px;
+    min-width: 0;
   }
+  .board[data-view-mode="board"] .column.column-done-drawer {
+    grid-column: 1 / -1;
+    min-height: auto;
+  }
+  .board[data-view-mode="board"] .column-done-drawer.is-collapsed .column-head {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 2px;
+  }
+  .board[data-view-mode="board"] .column-done-drawer.is-collapsed .task-list,
+  .board[data-view-mode="board"] .column-done-drawer.is-collapsed .empty-state {
+    display: none;
+  }
+  .board[data-view-mode="board"] .column-done-drawer .task-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 8px;
+  }
+  .col-done-actions { display: inline-flex; align-items: center; gap: 6px; }
   .column-head {
     display: flex;
     align-items: center;
