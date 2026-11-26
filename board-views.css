@@ -221,7 +221,7 @@ progress.tm-progress::-webkit-progress-value { background: var(--amber); border-
 .cal-unscheduled-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; }
 
 /* Режим «Дашборд прогресу %» */
-.dashboard-view { display: flex; flex-direction: column; gap: 12px; }
+.dashboard-view { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .dash-card {
   padding: 14px 16px;
   background: var(--bg-panel);
@@ -230,6 +230,7 @@ progress.tm-progress::-webkit-progress-value { background: var(--amber); border-
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-width: 0;
 }
 .dash-hero-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .dash-eyebrow { font-size: 12px; color: var(--text-muted); }
@@ -258,9 +259,9 @@ progress.tm-progress::-webkit-progress-value { background: var(--amber); border-
 .dash-bar-row { display: flex; flex-direction: column; gap: 4px; }
 .dash-bar-meta { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--text-muted); }
 .dash-upcoming-list { display: flex; flex-direction: column; gap: 6px; }
-.dash-upcoming-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 9px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); cursor: pointer; text-align: left; }
+.dash-upcoming-item { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 100%; min-width: 0; padding: 7px 9px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); cursor: pointer; text-align: left; }
 .dash-upcoming-item:hover { border-color: var(--border-strong); }
-.dash-up-title { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-up-title { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dash-empty { margin: 0; font-size: 12.5px; color: var(--text-dim); }
 
 /* Тактильний 3D-відгук (FX 3D) */
@@ -285,7 +286,11 @@ progress.tm-progress::-webkit-progress-value { background: var(--amber); border-
   .search-wrap { flex: 2; min-width: 170px; }
   .search-input { height: 34px; font-size: 16px; }
   .field-grid-3, .dash-spheres-grid, .dash-bottom-grid { grid-template-columns: 1fr; }
-  .cal-cell { min-height: 68px; padding: 4px; }
+  .dash-kpis { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dash-kpi { min-width: 0; }
+  .dash-upcoming-item { flex-wrap: wrap; row-gap: 5px; }
+  .dash-up-title { flex: 1 1 100%; order: -1; white-space: normal; }
+  .cal-cell { min-height: 68px; padding: 4px; min-width: 0; }
   .cal-add-day { opacity: 1; }
   .timers-dock { right: -36px; width: min(92vw, 300px); }
 }
