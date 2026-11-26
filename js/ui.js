@@ -199,9 +199,16 @@ function renderTaskCard(task, meta, nowInfo) {
       <div class="task-main">
         <div class="task-title-row">
           <h3 class="task-title">${escapeHtml(task.task)}</h3>
-          ${!task.done ? `<button type="button" class="pin-btn${meta.pinned ? ' is-active' : ''}" data-action="toggle-pin" data-row="${task.row}" title="${meta.pinned ? 'Відкріпити згори' : 'Закріпити згори колонки'}" aria-label="Закріпити">
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="${meta.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.6"><path d="M9.8 2.2l4 4-1.6 1.6-.9-.9-2.5 2.5.4 2.6-1.2 1.2L5.2 10.4 2.2 13.4l-.6-.6 3-3L1.8 7l1.2-1.2 2.6.4 2.5-2.5-.9-.9 1.6-1.6z"/></svg>
-          </button>` : ''}
+          <div class="card-head-actions">
+            ${!task.done ? `<button type="button" class="pin-btn${meta.pinned ? ' is-active' : ''}" data-action="toggle-pin" data-row="${task.row}" title="${meta.pinned ? 'Відкріпити згори' : 'Закріпити згори колонки'}" aria-label="Закріпити">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="${meta.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.6"><path d="M9.8 2.2l4 4-1.6 1.6-.9-.9-2.5 2.5.4 2.6-1.2 1.2L5.2 10.4 2.2 13.4l-.6-.6 3-3L1.8 7l1.2-1.2 2.6.4 2.5-2.5-.9-.9 1.6-1.6z"/></svg>
+            </button>` : ''}
+            <button type="button" class="card-del-btn" data-action="quick-delete" data-row="${task.row}" title="Видалити задачу" aria-label="Видалити задачу">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2.5 4.2h11M6 4.2V2.8h4v1.4M4.5 4.2l.6 8.5a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8.5"/>
+              </svg>
+            </button>
+          </div>
         </div>
         ${notesHtml}
         ${checklistHtml}

@@ -38,6 +38,7 @@ import {
   initModals,
   openTaskModal,
   openSettingsModal,
+  deleteTaskWithUndo,
   resetDeleteConfirm,
   resetLogoutConfirm
 } from './modals.js';
@@ -356,6 +357,7 @@ function bindEvents() {
       else if (act === 'copy-code') { if (await copyToClipboard(actEl.dataset.code)) { audioFx.playClick(); showToast(`Скопійовано: ${actEl.dataset.code}`, 'success'); } }
       else if (act === 'focus-inline-add') board.querySelector(`.inline-add-form[data-inline-status="${CSS.escape(actEl.dataset.status)}"] .inline-add-input`)?.focus();
       else if (act === 'archive-done') handleArchiveDoneClick(actEl);
+      else if (act === 'quick-delete') deleteTaskWithUndo(appCtx, Number(actEl.dataset.row));
       else if (act === 'open-task') openTaskModal(appCtx, findTaskByRow(Number(actEl.dataset.row)));
       else if (act === 'add-on-date') openTaskModal(appCtx, null, { defaultDate: actEl.dataset.date });
       else if (act === 'cal-select-day') { state.calSelectedDate = actEl.dataset.date; audioFx.playClick(); render(); }

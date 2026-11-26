@@ -344,7 +344,8 @@ button, input, select, textarea { font: inherit; color: var(--text-main); color-
 .task-title { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.35; color: var(--text-main); word-break: break-word; }
 .task-card.is-done .task-title { text-decoration: line-through; color: var(--text-muted); }
 
-.pin-btn {
+.card-head-actions { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.pin-btn, .card-del-btn {
   flex-shrink: 0;
   width: 22px;
   height: 22px;
@@ -356,11 +357,14 @@ button, input, select, textarea { font: inherit; color: var(--text-main); color-
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.35;
   cursor: pointer;
 }
-.task-card:hover .pin-btn, .pin-btn.is-active { opacity: 1; }
+.pin-btn { opacity: 0.35; }
+.card-del-btn { opacity: 0; transition: opacity 0.14s ease, color 0.14s ease, background-color 0.14s ease; }
+.task-card:hover .pin-btn, .pin-btn.is-active,
+.task-card:hover .card-del-btn, .card-del-btn:focus-visible { opacity: 1; }
 .pin-btn.is-active { color: var(--sky); }
+.card-del-btn:hover { color: #fda4af; background: rgba(244, 63, 94, 0.14); }
 
 .task-notes {
   margin: -1px 0 0;

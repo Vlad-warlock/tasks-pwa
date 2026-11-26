@@ -169,8 +169,46 @@ export function openTaskModal(ctx, task = null, opts = {}) {
   }
 }
 
+export function deleteTaskWithUndo(ctx, row) {
+  const { state, saveCache, render, syncCallbacks, pendingDeleteTimers } = ctx;
+  const target = state.tasks.find((t) => t.row === Number(row));
+  if (!target) return false;
+
+  const removedCopy = structuredClone(target);
+  const deleteKey = `${removedCopy.row}_${Date.now()}`;
+  state.tasks = state.tasks.filter((t) => t.row !== removedCopy.row);
+  saveCache();
+  render();
+  audioFx.playAlert();
+
+  const timerId = setTimeout(() => {
+    pendingDeleteTimers.delete(deleteKey);
+    enqueueOfflineOrSend(state, {
+      action: 'delete', targetRow: removedCopy.row, expectedTask: removedCopy.task, fields: {}, successText: 'Задачу видалено'
+    }, syncCallbacks);
+  }, 4000);
+  pendingDeleteTimers.set(deleteKey, timerId);
+
+  showToast(`Видалено: ${removedCopy.task}`, '', {
+    label: 'Скасувати',
+    onClick: () => {
+      const pending = pendingDeleteTimers.get(deleteKey);
+      if (pending) {
+        clearTimeout(pending);
+        pendingDeleteTimers.delete(deleteKey);
+        state.tasks.push(removedCopy);
+        saveCache();
+        render();
+        audioFx.playClick();
+        showToast('Видалення скасовано', 'success');
+      }
+    }
+  });
+  return true;
+}
+
 export function initModals(ctx) {
-  const { state, saveCache, render, ensureConfigured, refreshFromServer, syncCallbacks, nextTempRow, pendingDeleteTimers } = ctx;
+  const { state, saveCache, render, ensureConfigured, refreshFromServer, syncCallbacks, nextTempRow } = ctx;
   const findByRow = (r) => state.tasks.find((t) => t.row === Number(r));
 
   $('repeatWeekdaysWrap').innerHTML = WEEKDAYS.map(
@@ -328,35 +366,9 @@ export function initModals(ctx) {
       state.deleteConfirmTimer = setTimeout(() => resetDeleteConfirm(state), 3200);
       return;
     }
-    const target = findByRow(state.editingRow);
-    if (!target) return closeModal('taskModal', () => resetDeleteConfirm(state));
-
-    const removedCopy = structuredClone(target);
-    const deleteKey = `${removedCopy.row}_${Date.now()}`;
-    state.tasks = state.tasks.filter((t) => t.row !== removedCopy.row);
-    saveCache(); render(); closeModal('taskModal', () => resetDeleteConfirm(state)); audioFx.playAlert();
-
-    const timerId = setTimeout(() => {
-      pendingDeleteTimers.delete(deleteKey);
-      enqueueOfflineOrSend(state, {
-        action: 'delete', targetRow: removedCopy.row, expectedTask: removedCopy.task, fields: {}, successText: 'Задачу видалено'
-      }, syncCallbacks);
-    }, 4000);
-    pendingDeleteTimers.set(deleteKey, timerId);
-
-    showToast(`Видалено: ${removedCopy.task}`, '', {
-      label: 'Скасувати',
-      onClick: () => {
-        const pending = pendingDeleteTimers.get(deleteKey);
-        if (pending) {
-          clearTimeout(pending);
-          pendingDeleteTimers.delete(deleteKey);
-          state.tasks.push(removedCopy);
-          saveCache(); render(); audioFx.playClick();
-          showToast('Видалення скасовано', 'success');
-        }
-      }
-    });
+    const row = state.editingRow;
+    closeModal('taskModal', () => resetDeleteConfirm(state));
+    deleteTaskWithUndo(ctx, row);
   });
 
   $('settingsForm').addEventListener('submit', async (e) => {

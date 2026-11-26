@@ -214,6 +214,11 @@
     height: 18px;
     opacity: 0.85;
   }
+  .card-del-btn {
+    opacity: 0.5;
+    width: 28px;
+    height: 28px;
+  }
   .card-tags-row,
   .cal-btn,
   .cal-synced,
