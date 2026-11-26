@@ -31,6 +31,7 @@ function onOpen() {
     .addSeparator()
     .addItem('Встановити / змінити секретний PIN', 'promptSetSecretPin')
     .addItem('Встановити Gemini API ключ (голос)', 'promptSetGeminiKey')
+    .addItem('Увімкнути тригери Telegram', 'setupTelegramTriggers')
     .addItem('Скинути блокування невдалих входів', 'resetRateLimitFromSheet')
     .addToUi();
 }
@@ -111,12 +112,31 @@ function doPost(e) {
         ok: true,
         sheetUrl: ss.getUrl(),
         hasGeminiKey: hasGeminiKey_(),
+        telegram: getTelegramStatus_(),
         tasks: readTasks_(sheet),
         archived: readArchivedSummary_(ss),
         journal: readJournalPayload_(ss)
       });
     } catch (err) {
       return jsonResponse_({ ok: false, error: err && err.message ? err.message : 'Помилка читання таблиці' });
+    }
+  }
+
+  if (action === 'saveTelegramConfig') {
+    try {
+      const tgRes = handleSaveTelegramConfig_(payload);
+      return jsonResponse_(Object.assign({ ok: true }, tgRes));
+    } catch (err) {
+      return jsonResponse_({ ok: false, error: err && err.message ? err.message : 'Не вдалося зберегти налаштування Telegram' });
+    }
+  }
+
+  if (action === 'testTelegram') {
+    try {
+      handleTestTelegram_();
+      return jsonResponse_({ ok: true });
+    } catch (err) {
+      return jsonResponse_({ ok: false, error: err && err.message ? err.message : 'Не вдалося надіслати повідомлення' });
     }
   }
 

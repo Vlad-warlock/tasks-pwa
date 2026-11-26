@@ -66,6 +66,7 @@ export async function apiListTasks(config) {
     archived,
     sheetUrl: data.sheetUrl || '',
     hasGeminiKey: Boolean(data.hasGeminiKey),
+    telegram: data.telegram || null,
     journal: data.journal || null
   };
 }

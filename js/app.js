@@ -54,6 +54,7 @@ const state = {
   pendingQueue: loadPendingQueue(),
   lastSyncAt: null,
   hasGeminiKey: false,
+  telegram: { hasToken: false, chatId: '', enabled: false },
   isInitialLoading: false,
   activeView: 'board',
   activeSphere: 'Усі',
@@ -84,7 +85,7 @@ let tempRowSeq = -1;
 let draggedRow = null;
 const pendingDeleteTimers = new Map();
 
-const saveCache = () => saveJson(STORAGE_CACHE, { tasks: state.tasks, archivedTasks: state.archivedTasks, lastSyncAt: state.lastSyncAt, hasGeminiKey: state.hasGeminiKey });
+const saveCache = () => saveJson(STORAGE_CACHE, { tasks: state.tasks, archivedTasks: state.archivedTasks, lastSyncAt: state.lastSyncAt, hasGeminiKey: state.hasGeminiKey, telegram: state.telegram });
 const saveJournalCache = () => saveJson(STORAGE_JOURNAL, state.journal);
 const render = () => renderAll(state);
 const findTaskByRow = (row) => state.tasks.find((t) => t.row === Number(row));
@@ -153,9 +154,10 @@ async function refreshFromServer(silent = false) {
   if (state.pendingQueue.length > 0) await flushQueue(state, syncCallbacks);
   setSyncIndicator('syncing', 'Оновлення даних...');
   try {
-    const { tasks: fresh, archived, sheetUrl, hasGeminiKey, journal } = await apiListTasks(state.config);
+    const { tasks: fresh, archived, sheetUrl, hasGeminiKey, telegram, journal } = await apiListTasks(state.config);
     if (sheetUrl) updateStoredSheetUrl(sheetUrl);
     state.hasGeminiKey = Boolean(hasGeminiKey);
+    if (telegram) state.telegram = telegram;
     state.isInitialLoading = false;
     if (state.inFlightCount === 0 && state.pendingQueue.length === 0) {
       state.tasks = fresh;
@@ -464,6 +466,7 @@ function init() {
     state.archivedTasks = Array.isArray(cached.archivedTasks) ? cached.archivedTasks : [];
     state.lastSyncAt = cached.lastSyncAt || null;
     state.hasGeminiKey = Boolean(cached.hasGeminiKey);
+    if (cached.telegram) state.telegram = cached.telegram;
   }
   if (hasValidConfig(state.config) && state.tasks.length === 0) state.isInitialLoading = true;
 

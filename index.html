@@ -15,10 +15,10 @@
   <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg">
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./styles.css?v=14">
-  <link rel="stylesheet" href="./board-views.css?v=14">
-  <link rel="stylesheet" href="./day-view.css?v=14">
-  <link rel="stylesheet" href="./mobile.css?v=14">
+  <link rel="stylesheet" href="./styles.css?v=15">
+  <link rel="stylesheet" href="./board-views.css?v=15">
+  <link rel="stylesheet" href="./day-view.css?v=15">
+  <link rel="stylesheet" href="./mobile.css?v=15">
 </head>
 <body>
   <header class="topbar">
@@ -406,6 +406,29 @@
           </div>
         </div>
 
+        <details class="tg-settings-details" id="tgSettingsDetails">
+          <summary class="tg-settings-summary">
+            <span>Telegram-сповіщення (08:30, дедлайни, 21:00)</span>
+            <span class="gemini-key-badge" id="tgStatusBadge">Не налаштовано</span>
+          </summary>
+          <div class="tg-settings-body">
+            <p class="settings-hint">Створіть бота в <strong>@BotFather</strong>, натисніть у ньому <strong>Start</strong> і вставте токен нижче.</p>
+            <div class="field">
+              <label for="fieldTgToken">Токен бота</label>
+              <input type="password" id="fieldTgToken" placeholder="123456:ABC... (від @BotFather)" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="field">
+              <label for="fieldTgChatId">Chat ID (опційно, визначається сам)</label>
+              <input type="text" id="fieldTgChatId" placeholder="Авто після /start" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="tg-actions-row">
+              <button type="button" class="btn btn-primary" id="btnSaveTg">Підключити</button>
+              <button type="button" class="btn btn-secondary" id="btnTestTg" hidden>Тест</button>
+              <button type="button" class="btn btn-ghost" id="btnDisableTg" hidden>Вимкнути</button>
+            </div>
+          </div>
+        </details>
+
         <div class="settings-tools">
           <button type="button" class="btn btn-secondary btn-full mobile-only-flex" id="btnRefreshMobile">
             Оновити дані з таблиці
@@ -547,6 +570,6 @@
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
 
-  <script type="module" src="./js/app.js?v=14"></script>
+  <script type="module" src="./js/app.js?v=15"></script>
 </body>
 </html>

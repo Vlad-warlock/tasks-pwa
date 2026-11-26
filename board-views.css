@@ -546,3 +546,27 @@ progress.tm-progress::-webkit-progress-value { background: var(--amber); border-
 }
 .vd-meta { display: flex; flex-wrap: wrap; gap: 5px; }
 .vd-notes { margin: 0; font-size: 12.5px; color: var(--text-muted); word-break: break-word; }
+
+.tg-settings-details {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: rgba(22, 31, 45, 0.45);
+  padding: 0 10px;
+}
+.tg-settings-details[open] { padding-bottom: 10px; }
+.tg-settings-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  cursor: pointer;
+  list-style: none;
+}
+.tg-settings-summary::-webkit-details-marker { display: none; }
+.tg-settings-body { display: flex; flex-direction: column; gap: 9px; padding-top: 2px; }
+.tg-actions-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.tg-actions-row .btn { flex: 1; }

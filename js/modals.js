@@ -32,6 +32,7 @@ import {
   openModal,
   closeModal
 } from './ui.js';
+import { syncTelegramUi, initTelegramSettings } from './telegram-ui.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -110,6 +111,7 @@ export function openSettingsModal(ctx) {
   $('fieldGeminiKey').value = '';
   $('fieldSoundEnabled').checked = Boolean(state.prefs.soundEnabled);
   syncGeminiKeyBadge(state);
+  syncTelegramUi(state);
   resetLogoutConfirm(state);
   updateLastSyncText(state.lastSyncAt);
   openModal('settingsModal');
@@ -449,6 +451,7 @@ export function initModals(ctx) {
     }
   });
 
+  initTelegramSettings(ctx);
   document.querySelectorAll('[data-close]').forEach((btn) => btn.addEventListener('click', () => closeModal(btn.dataset.close, () => resetDeleteConfirm(state))));
   document.querySelectorAll('.modal-backdrop').forEach((bd) => bd.addEventListener('click', (e) => { if (e.target === bd) closeModal(bd.id, () => resetDeleteConfirm(state)); }));
 }
