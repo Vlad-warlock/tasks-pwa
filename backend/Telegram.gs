@@ -29,6 +29,11 @@ function getTelegramStatus_() {
   };
 }
 
+function sanitizeTgToken_(raw) {
+  const m = String(raw || '').match(/\d{5,15}:[A-Za-z0-9_-]{20,80}/);
+  return m ? m[0] : '';
+}
+
 function escapeTgHtml_(str) {
   return String(str || '')
     .replace(/&/g, '&amp;')
@@ -37,7 +42,9 @@ function escapeTgHtml_(str) {
 }
 
 function sendTelegramHtml_(token, chatId, htmlText) {
-  const url = 'https://api.telegram.org/bot' + encodeURIComponent(token) + '/sendMessage';
+  const cleanToken = sanitizeTgToken_(token);
+  if (!cleanToken) throw new Error('Некоректний формат токена Telegram-бота');
+  const url = 'https://api.telegram.org/bot' + cleanToken + '/sendMessage';
   const resp = UrlFetchApp.fetch(url, {
     method: 'post',
     contentType: 'application/json',
@@ -60,7 +67,9 @@ function sendTelegramHtml_(token, chatId, htmlText) {
 }
 
 function detectTelegramChatId_(token) {
-  const url = 'https://api.telegram.org/bot' + encodeURIComponent(token) + '/getUpdates?limit=25';
+  const cleanToken = sanitizeTgToken_(token);
+  if (!cleanToken) throw new Error('Некоректний формат токена Telegram-бота');
+  const url = 'https://api.telegram.org/bot' + cleanToken + '/getUpdates?limit=25';
   const resp = UrlFetchApp.fetch(url, { method: 'get', muteHttpExceptions: true });
   let parsed = null;
   try { parsed = JSON.parse(resp.getContentText()); } catch (_) {}
@@ -103,13 +112,36 @@ function handleSaveTelegramConfig_(payload) {
     return Object.assign(getTelegramStatus_(), { triggersReady: true });
   }
 
-  const token = String((payload && payload.tgBotToken) || '').trim() || prev.token;
-  if (!token) throw new Error('Вставте токен бота з @BotFather');
+  const rawToken = String((payload && payload.tgBotToken) || '').trim();
+  const token = rawToken ? sanitizeTgToken_(rawToken) : sanitizeTgToken_(prev.token);
+  if (!token) throw new Error('Некоректний токен бота. Скопіюйте токен формату 123456:ABC... з @BotFather');
 
-  let chatId = String((payload && payload.tgChatId) || '').trim() || prev.chatId;
+  const rawChat = String((payload && payload.tgChatId) || '').trim();
+  if (rawChat && !/^-?\d+$/.test(rawChat)) {
+    throw new Error('Очистіть поле Chat ID (або вкажіть лише цифри) — бот знайде ваш чат сам після /start');
+  }
+
+  let chatId = rawChat || (!rawToken || rawToken === prev.token ? prev.chatId : '');
   if (!chatId) chatId = detectTelegramChatId_(token);
   if (!chatId) {
-    throw new Error('Натисніть /start у своєму боті в Telegram і спробуйте ще раз, або вкажіть Chat ID вручну.');
+    throw new Error('Натисніть /start у своєму боті в Telegram (або напишіть йому «Привіт») і знову тисніть Підключити.');
+  }
+
+  const welcomeMsg = '<b>Задачі PRO підключено</b>\nСюди приходитимуть ранковий звіт (08:30), нагадування за 15–30 хв до дедлайну та вечірній підсумок (21:00).\n\n<a href="' + PWA_PUBLIC_URL + '">Відкрити дошку</a>';
+  try {
+    sendTelegramHtml_(token, chatId, welcomeMsg);
+  } catch (err) {
+    if (!rawChat && String(err && err.message || '').indexOf('chat not found') !== -1) {
+      const freshChatId = detectTelegramChatId_(token);
+      if (freshChatId && freshChatId !== chatId) {
+        chatId = freshChatId;
+        sendTelegramHtml_(token, chatId, welcomeMsg);
+      } else {
+        throw new Error('Чат не знайдено. Відкрийте саме цього бота в Telegram, натисніть Start і спробуйте ще раз (поле Chat ID лишіть порожнім).');
+      }
+    } else {
+      throw err;
+    }
   }
 
   props.setProperty(PROP_TG_TOKEN, token);
@@ -122,12 +154,6 @@ function handleSaveTelegramConfig_(payload) {
   } catch (_) {
     triggersReady = false;
   }
-
-  sendTelegramHtml_(
-    token,
-    chatId,
-    '<b>Задачі PRO підключено</b>\nСюди приходитимуть ранковий звіт (08:30), нагадування за 15–30 хв до дедлайну та вечірній підсумок (21:00).\n\n<a href="' + PWA_PUBLIC_URL + '">Відкрити дошку</a>'
-  );
 
   return Object.assign(getTelegramStatus_(), { triggersReady: triggersReady });
 }
