@@ -1,0 +1,5 @@
+# Секрети та конфігурація Google Apps Script CLI (clasp)
+.clasp.json
+backend/.clasp.json
+.clasprc.json
+*.clasp.json
