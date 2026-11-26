@@ -7,10 +7,6 @@ export function setLastServerSnapshot(tasks) {
   lastServerSnapshot = Array.isArray(tasks) ? tasks : null;
 }
 
-export function getLastServerSnapshot() {
-  return lastServerSnapshot;
-}
-
 export function loadPendingQueue() {
   const list = loadJson(STORAGE_QUEUE, []);
   return Array.isArray(list) ? list : [];
@@ -62,11 +58,11 @@ export async function apiListTasks(config) {
   const data = await apiPost(config, { action: 'list' });
   const tasks = Array.isArray(data.tasks) ? data.tasks : [];
   lastServerSnapshot = tasks;
-  return tasks;
+  return { tasks, sheetUrl: data.sheetUrl || '' };
 }
 
 function buildItemPayload(item) {
-  if (item.action === 'create' || (item.action === 'syncCalendar' && item.targetRow == null)) {
+  if (item.action === 'create' || item.action === 'archiveDone' || (item.action === 'syncCalendar' && item.targetRow == null)) {
     return { action: item.action, ...item.fields };
   }
   return {
@@ -93,7 +89,7 @@ export function enqueueOfflineOrSend(state, item, callbacks) {
 
   if (!navigator.onLine) {
     callbacks.onOfflineQueued();
-    return;
+    return Promise.resolve(false);
   }
 
   return flushQueue(state, callbacks);
@@ -119,12 +115,18 @@ export function flushQueue(state, callbacks) {
       try {
         const data = await apiPost(state.config, buildItemPayload(current));
         if (Array.isArray(data.tasks)) lastServerSnapshot = data.tasks;
+        if (data.sheetUrl && callbacks.onSheetUrl) callbacks.onSheetUrl(data.sheetUrl);
+
         state.pendingQueue.shift();
         savePendingQueue(state.pendingQueue);
         state.lastSyncAt = Date.now();
         syncedAny = true;
 
-        if (current.successText) {
+        if (data.spawnedDate) {
+          callbacks.onToast(`Створено наступне повторення на ${data.spawnedDate}`, 'success');
+        } else if (current.action === 'archiveDone' && data.archived !== undefined) {
+          callbacks.onToast(`Перенесено в аркуш «Архів»: ${data.archived}`, 'success');
+        } else if (current.successText) {
           const msg = current.action === 'syncCalendar' && current.targetRow == null && data.synced !== undefined
             ? `Додано подій у Календар: ${data.synced}`
             : current.successText;
@@ -132,17 +134,11 @@ export function flushQueue(state, callbacks) {
         }
         callbacks.onQueueChange();
       } catch (err) {
-        if (!err.isServerError && !navigator.onLine) {
-          callbacks.onSyncIndicator('error', `Офлайн: у черзі ${state.pendingQueue.length}`);
-          break;
-        }
-        // Помилка мережі при формально онлайн-статусі — залишаємо в черзі
         if (!err.isServerError) {
-          callbacks.onSyncIndicator('error', 'Немає зв’язку. Зміни збережено в черзі');
-          callbacks.onToast('Немає зв’язку з таблицею. Зміни в офлайн-черзі.', 'error');
+          callbacks.onSyncIndicator('error', `Немає зв’язку: у черзі ${state.pendingQueue.length}`);
+          if (navigator.onLine) callbacks.onToast('Немає зв’язку з таблицею. Зміни в офлайн-черзі.', 'error');
           break;
         }
-        // Помилка валідації або авторизації сервера — знімаємо елемент і відновлюємо актуальний стан
         state.pendingQueue.shift();
         savePendingQueue(state.pendingQueue);
         if (err.serverTasks) {

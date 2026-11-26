@@ -1,11 +1,17 @@
-const CACHE_NAME = 'tasks-pwa-v2';
+const CACHE_NAME = 'tasks-pwa-v3';
 const APP_SHELL = [
   './',
   './index.html',
   './styles.css',
+  './board-views.css',
   './js/utils.js',
+  './js/notes-meta.js',
+  './js/fx.js',
+  './js/timers-dock.js',
   './js/api.js',
+  './js/views.js',
   './js/ui.js',
+  './js/modals.js',
   './js/app.js',
   './manifest.json',
   './icons/favicon.svg',
@@ -41,6 +47,22 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
+  // Network-first для HTML-навігації, щоб оновлення версій застосовувались з першого разу
+  if (req.mode === 'navigate' || url.pathname.endsWith('/index.html') || url.pathname.endsWith('/')) {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res && res.status === 200) {
+            const copy = res.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req).then((c) => c || caches.match('./index.html')))
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(req).then((cached) => {
       const networkFetch = fetch(req)
@@ -51,7 +73,7 @@ self.addEventListener('fetch', (event) => {
           }
           return res;
         })
-        .catch(() => cached || caches.match('./index.html'));
+        .catch(() => cached);
 
       return cached || networkFetch;
     })

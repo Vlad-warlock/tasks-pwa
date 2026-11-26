@@ -3,28 +3,37 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'self'; form-action 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'self'; form-action 'self';">
   <meta name="theme-color" content="#0d1117">
   <meta name="color-scheme" content="dark">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Задачі">
-  <meta name="description" content="Мобільний менеджер задач із синхронізацією в Google Таблицю та Календар">
-  <title>Задачі</title>
+  <meta name="description" content="Трекер задач Крипта • Навчання • Життя із синхронізацією в Google Таблицю та Календар">
+  <title>Задачі PRO</title>
   <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg">
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <link rel="manifest" href="./manifest.json">
   <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./board-views.css">
 </head>
 <body>
   <header class="topbar">
     <div class="topbar-inner">
       <div class="topbar-row">
-        <div class="brand">
-          <span class="sync-dot" id="syncDot" title="Стан підключення"></span>
-          <h1 class="brand-title">Задачі</h1>
-          <span class="pending-badge" id="pendingBadge" hidden>У черзі: 0</span>
+        <div class="brand-group">
+          <div class="brand">
+            <span class="sync-dot" id="syncDot" title="Стан підключення"></span>
+            <h1 class="brand-title">Задачі</h1>
+            <span class="pending-badge" id="pendingBadge" hidden>У черзі: 0</span>
+          </div>
+
+          <nav class="view-switcher" id="viewSwitcher" aria-label="Режим відображення">
+            <button type="button" class="view-tab is-active" data-view="board">Дошка</button>
+            <button type="button" class="view-tab" data-view="calendar">Календар</button>
+            <button type="button" class="view-tab" data-view="dashboard">Дашборд</button>
+          </nav>
         </div>
 
         <div class="stats-strip" aria-label="Швидкі фільтри та статистика">
@@ -43,10 +52,28 @@
         </div>
 
         <div class="header-actions">
+          <div class="timers-anchor">
+            <button type="button" class="pill-btn" id="btnTimers" title="Фокус-таймери">
+              <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+                <circle cx="10" cy="11" r="6.5"/><path d="M10 7.5V11l2.2 1.5M8 2.5h4"/>
+              </svg>
+              <span id="timersBtnLabel">Таймер</span>
+            </button>
+            <div class="timers-dock" id="timersDock" hidden></div>
+          </div>
+
+          <button type="button" class="pill-btn is-desktop-only is-active" id="btnFxMode" title="Перемкнути тактильний 3D-відгук (FX 3D / Eco)">FX 3D</button>
+
+          <a class="pill-btn sheet-link-btn" id="btnOpenSheet" href="#" target="_blank" rel="noopener noreferrer" title="Відкрити Google Таблицю «Трекер задач»" hidden>
+            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="14" height="14" rx="2"/><path d="M3 8h14M8 8v9"/>
+            </svg>
+            <span class="sheet-link-text">Таблиця</span>
+          </a>
+
           <button type="button" class="icon-btn" id="btnRefresh" aria-label="Оновити список" title="Оновити (R)">
             <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M16.5 10a6.5 6.5 0 1 1-1.9-4.6L16.5 7.2"/>
-              <path d="M16.5 3.5v3.7h-3.7"/>
+              <path d="M16.5 10a6.5 6.5 0 1 1-1.9-4.6L16.5 7.2"/><path d="M16.5 3.5v3.7h-3.7"/>
             </svg>
           </button>
           <button type="button" class="icon-btn" id="btnSettings" aria-label="Налаштування" title="Налаштування">
@@ -66,39 +93,48 @@
           <button type="button" class="chip" data-sphere="Життя">Життя <span class="chip-count" data-sphere-count="Життя">0</span></button>
         </div>
 
-        <div class="search-wrap">
-          <svg class="search-icon" viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
-            <circle cx="9" cy="9" r="5.5"/>
-            <path d="M13.5 13.5L17 17"/>
-          </svg>
-          <input type="search" id="fieldSearch" class="search-input" placeholder="Пошук задач (/)" aria-label="Пошук задач" autocomplete="off">
-          <button type="button" id="btnClearSearch" class="search-clear" aria-label="Очистити пошук" hidden>&times;</button>
+        <div class="right-filters">
+          <span class="active-tag-filter" id="activeTagChip" hidden>
+            <span id="activeTagLabel">#tag</span>
+            <button type="button" id="btnClearTag" aria-label="Скинути тег">&times;</button>
+          </span>
+
+          <select id="filterPriority" class="prio-filter-select" aria-label="Фільтр за пріоритетом">
+            <option value="Усі">Пріоритет: Усі</option>
+            <option value="Високий">Високий</option>
+            <option value="Середній">Середній</option>
+            <option value="Низький">Низький</option>
+          </select>
+
+          <div class="search-wrap">
+            <svg class="search-icon" viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+              <circle cx="9" cy="9" r="5.5"/><path d="M13.5 13.5L17 17"/>
+            </svg>
+            <input type="search" id="fieldSearch" class="search-input" placeholder="Пошук або #тег (/)" aria-label="Пошук задач" autocomplete="off">
+            <button type="button" id="btnClearSearch" class="search-clear" aria-label="Очистити пошук" hidden>&times;</button>
+          </div>
         </div>
       </div>
 
       <nav class="status-tabs" id="statusTabs" aria-label="Колонки статусу">
-        <button type="button" class="status-tab is-active" data-status="В роботі">
-          <span>В роботі</span>
-          <span class="tab-badge" data-status-count="В роботі">0</span>
+        <button type="button" class="status-tab" data-status="Беклог">
+          <span>Беклог</span><span class="tab-badge" data-status-count="Беклог">0</span>
         </button>
         <button type="button" class="status-tab" data-status="Цей тиждень">
-          <span>Цей тиждень</span>
-          <span class="tab-badge" data-status-count="Цей тиждень">0</span>
+          <span>Цей тиждень</span><span class="tab-badge" data-status-count="Цей тиждень">0</span>
         </button>
-        <button type="button" class="status-tab" data-status="Беклог">
-          <span>Беклог</span>
-          <span class="tab-badge" data-status-count="Беклог">0</span>
+        <button type="button" class="status-tab is-active" data-status="В роботі">
+          <span>В роботі</span><span class="tab-badge" data-status-count="В роботі">0</span>
         </button>
         <button type="button" class="status-tab" data-status="Готово">
-          <span>Готово</span>
-          <span class="tab-badge" data-status-count="Готово">0</span>
+          <span>Готово</span><span class="tab-badge" data-status-count="Готово">0</span>
         </button>
       </nav>
     </div>
   </header>
 
   <main class="board-wrap">
-    <div class="board" id="board"></div>
+    <div class="board" id="board" data-view-mode="board"></div>
   </main>
 
   <button type="button" class="fab" id="btnAdd" aria-label="Нова задача" title="Нова задача (N)">
@@ -107,16 +143,19 @@
     </svg>
   </button>
 
-  <!-- Модальне вікно створення / редагування задачі -->
+  <!-- Модальне вікно задачі -->
   <div class="modal-backdrop" id="taskModal" hidden>
     <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle">
       <div class="modal-head">
         <h2 class="modal-title" id="taskModalTitle">Нова задача</h2>
-        <button type="button" class="icon-btn" data-close="taskModal" aria-label="Закрити">
-          <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="M5 5l10 10M15 5L5 15"/>
-          </svg>
-        </button>
+        <div class="modal-head-right">
+          <button type="button" class="pill-btn" id="btnStartTaskTimer" title="Запустити 25 хв фокус-таймер під цю задачу" hidden>⏱ 25 хв</button>
+          <button type="button" class="icon-btn" data-close="taskModal" aria-label="Закрити">
+            <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M5 5l10 10M15 5L5 15"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <form id="taskForm" class="modal-body" novalidate>
@@ -124,7 +163,7 @@
 
         <div class="field">
           <label for="fieldTask">Назва задачі</label>
-          <input type="text" id="fieldTask" placeholder="Що потрібно зробити?" required autocomplete="off">
+          <input type="text" id="fieldTask" placeholder="Напр. Прокрутити об’єм на Bybit" required autocomplete="off">
         </div>
 
         <div class="field-grid-3">
@@ -140,9 +179,9 @@
           <div class="field">
             <label for="fieldStatus">Статус</label>
             <select id="fieldStatus">
-              <option value="В роботі">В роботі</option>
-              <option value="Цей тиждень">Цей тиждень</option>
               <option value="Беклог">Беклог</option>
+              <option value="Цей тиждень">Цей тиждень</option>
+              <option value="В роботі" selected>В роботі</option>
               <option value="Готово">Готово</option>
             </select>
           </div>
@@ -176,17 +215,52 @@
           </div>
         </div>
 
+        <div class="field-grid-2">
+          <div class="field">
+            <label for="fieldRepeatType">Повторення</label>
+            <select id="fieldRepeatType">
+              <option value="none">Без повтору</option>
+              <option value="daily">Щодня</option>
+              <option value="weekly">Щотижня (дні)</option>
+              <option value="monthly">Щомісяця</option>
+              <option value="every_n">Кожні N днів</option>
+            </select>
+          </div>
+          <div class="field" id="repeatValWrap" hidden>
+            <label for="fieldRepeatVal" id="fieldRepeatValLabel">Інтервал</label>
+            <input type="number" id="fieldRepeatVal" min="1" max="31" value="1">
+          </div>
+          <div class="field">
+            <label for="fieldTags">Мітки / #профіль</label>
+            <input type="text" id="fieldTags" placeholder="#bybit #342 #терміново" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="weekdays-row" id="repeatWeekdaysWrap" hidden></div>
+
         <div class="field">
-          <label for="fieldNotes">Нотатки</label>
-          <textarea id="fieldNotes" rows="3" placeholder="Деталі, посилання https://... або контекст"></textarea>
+          <label for="fieldNewCheck">Чекліст підзадач (як у Trello)</label>
+          <div id="checklistItems" class="cl-edit-list"></div>
+          <div class="cl-add-row">
+            <input type="text" id="fieldNewCheck" placeholder="Додати крок і натиснути Enter..." autocomplete="off">
+            <button type="button" class="btn btn-secondary" id="btnAddCheckItem">Додати</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="fieldNotes">Нотатки та посилання</label>
+          <textarea id="fieldNotes" rows="2" placeholder="Деталі, реквізити або https://..."></textarea>
         </div>
 
         <div class="toggles-row">
           <label class="check-row" id="doneToggleWrap">
             <input type="checkbox" id="fieldDone">
-            <span>Позначити виконаною</span>
+            <span>Виконано</span>
           </label>
-
+          <label class="check-row">
+            <input type="checkbox" id="fieldPinned">
+            <span>Закріпити згори</span>
+          </label>
           <label class="check-row" id="calendarToggleWrap">
             <input type="checkbox" id="fieldAddToCalendar">
             <span id="calendarToggleText">Одразу в Календар</span>
@@ -204,7 +278,7 @@
     </div>
   </div>
 
-  <!-- Модальне вікно налаштувань підключення -->
+  <!-- Модальне вікно налаштувань -->
   <div class="modal-backdrop" id="settingsModal" hidden>
     <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
       <div class="modal-head">
@@ -217,7 +291,7 @@
       </div>
 
       <form id="settingsForm" class="modal-body" novalidate>
-        <p class="settings-hint">Вкажіть адресу розгорнутого Google Apps Script (script.google.com) і ваш секретний PIN. Дані зберігаються лише локально на цьому пристрої.</p>
+        <p class="settings-hint">Вкажіть URL Google Apps Script (script.google.com) та ваш секретний пароль. Посилання на Google Таблицю підтягується автоматично після входу.</p>
 
         <div class="field">
           <label for="fieldApiUrl">Web App URL</label>
@@ -232,9 +306,14 @@
           </div>
         </div>
 
+        <div class="field">
+          <label for="fieldSheetUrl">Посилання на Google Таблицю (опційно)</label>
+          <input type="url" id="fieldSheetUrl" placeholder="https://docs.google.com/spreadsheets/d/..." autocomplete="off" spellcheck="false">
+        </div>
+
         <label class="check-row">
           <input type="checkbox" id="fieldSoundEnabled" checked>
-          <span>Тихий тактильний звук при виконанні задач</span>
+          <span>Акордовий звуковий відгук (SoundEngine)</span>
         </label>
 
         <div class="settings-tools">

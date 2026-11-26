@@ -1,21 +1,21 @@
 import {
   STORAGE_CONFIG,
   STORAGE_CACHE,
-  STORAGE_QUEUE,
   STORAGE_PREFS,
   loadJson,
   saveJson,
-  safeApiUrl,
+  safeSheetUrl,
+  copyToClipboard,
   getOffsetDateStr,
-  reconcileClientDoneStatus,
-  playFeedbackSound
+  reconcileClientDoneStatus
 } from './utils.js';
+import { parseTaskMeta, serializeTaskMeta } from './notes-meta.js';
+import { audioFx, initTactile3D } from './fx.js';
+import { initTimersDock } from './timers-dock.js';
 import {
   apiListTasks,
   hasValidConfig,
   loadPendingQueue,
-  savePendingQueue,
-  setLastServerSnapshot,
   enqueueOfflineOrSend,
   flushQueue
 } from './api.js';
@@ -24,27 +24,41 @@ import {
   updateLastSyncText,
   updatePendingBadge,
   showToast,
-  openModal,
   closeModal,
   renderAll
 } from './ui.js';
+import {
+  initModals,
+  openTaskModal,
+  openSettingsModal,
+  resetDeleteConfirm,
+  resetLogoutConfirm
+} from './modals.js';
 
 const $ = (id) => document.getElementById(id);
+const nowInit = new Date();
 
 const state = {
-  config: loadJson(STORAGE_CONFIG, { url: '', pin: '' }),
-  prefs: loadJson(STORAGE_PREFS, { soundEnabled: true }),
+  config: loadJson(STORAGE_CONFIG, { url: '', pin: '', sheetUrl: '' }),
+  prefs: loadJson(STORAGE_PREFS, { soundEnabled: true, fx3d: true }),
   tasks: [],
   pendingQueue: loadPendingQueue(),
   lastSyncAt: null,
   isInitialLoading: false,
+  activeView: 'board',
   activeSphere: 'Усі',
+  activePriority: 'Усі',
+  activeTag: '',
   activeStatus: 'В роботі',
-  quickFilter: 'all', // 'all' | 'today' | 'overdue'
+  calYear: nowInit.getFullYear(),
+  calMonth: nowInit.getMonth(),
+  quickFilter: 'all',
   searchQuery: '',
   editingRow: null,
+  modalChecklist: [],
   deleteConfirmTimer: null,
   logoutConfirmTimer: null,
+  archiveConfirmTimer: null,
   inFlightCount: 0
 };
 
@@ -52,37 +66,54 @@ let tempRowSeq = -1;
 let draggedRow = null;
 const pendingDeleteTimers = new Map();
 
-function saveCache() {
-  saveJson(STORAGE_CACHE, { tasks: state.tasks, lastSyncAt: state.lastSyncAt });
+const saveCache = () => saveJson(STORAGE_CACHE, { tasks: state.tasks, lastSyncAt: state.lastSyncAt });
+const render = () => renderAll(state);
+const findTaskByRow = (row) => state.tasks.find((t) => t.row === Number(row));
+
+function updateStoredSheetUrl(nextSheetUrl) {
+  const clean = safeSheetUrl(nextSheetUrl);
+  if (!clean || state.config.sheetUrl === clean) return;
+  state.config.sheetUrl = clean;
+  saveJson(STORAGE_CONFIG, state.config);
 }
 
 const syncCallbacks = {
   onSyncIndicator: setSyncIndicator,
   onToast: (msg, kind) => showToast(msg, kind),
   onQueueChange: () => updatePendingBadge(state.pendingQueue.length),
+  onSheetUrl: (url) => updateStoredSheetUrl(url),
   onOfflineQueued: () => {
     setSyncIndicator('error', `Офлайн: у черзі ${state.pendingQueue.length}`);
     showToast('Збережено в офлайн-чергу. Синхронізується при появі мережі.');
   },
   onTasksUpdated: () => {
     saveCache();
-    renderAll(state);
+    render();
     updateLastSyncText(state.lastSyncAt);
   }
 };
 
+const appCtx = {
+  state,
+  saveCache,
+  render,
+  ensureConfigured,
+  refreshFromServer,
+  syncCallbacks,
+  nextTempRow: () => tempRowSeq--,
+  pendingDeleteTimers
+};
+
 function ensureConfigured() {
   if (hasValidConfig(state.config)) return true;
-  populateSettingsModal();
-  openModal('settingsModal');
+  openSettingsModal(appCtx);
   showToast('Спочатку підключіть таблицю у налаштуваннях', 'error');
   return false;
 }
 
 async function refreshFromServer(silent = false) {
   if (!hasValidConfig(state.config)) {
-    populateSettingsModal();
-    openModal('settingsModal');
+    openSettingsModal(appCtx);
     return false;
   }
   if (!navigator.onLine) {
@@ -91,19 +122,17 @@ async function refreshFromServer(silent = false) {
     return false;
   }
 
-  if (state.pendingQueue.length > 0) {
-    await flushQueue(state, syncCallbacks);
-  }
-
+  if (state.pendingQueue.length > 0) await flushQueue(state, syncCallbacks);
   setSyncIndicator('syncing', 'Оновлення даних...');
   try {
-    const fresh = await apiListTasks(state.config);
+    const { tasks: fresh, sheetUrl } = await apiListTasks(state.config);
+    if (sheetUrl) updateStoredSheetUrl(sheetUrl);
     state.isInitialLoading = false;
     if (state.inFlightCount === 0 && state.pendingQueue.length === 0) {
       state.tasks = fresh;
       state.lastSyncAt = Date.now();
       saveCache();
-      renderAll(state);
+      render();
     }
     setSyncIndicator('ok', 'Синхронізовано');
     updateLastSyncText(state.lastSyncAt);
@@ -111,16 +140,14 @@ async function refreshFromServer(silent = false) {
     return true;
   } catch (err) {
     state.isInitialLoading = false;
-    renderAll(state);
+    render();
     setSyncIndicator('error', err.message || 'Помилка з’єднання');
     showToast(err.message || 'Не вдалося завантажити задачі', 'error');
     return false;
   }
 }
 
-/* ======================== Операції над задачами ======================== */
-
-const findTaskByRow = (row) => state.tasks.find((t) => t.row === Number(row));
+/* ======================== Операції на дошці ======================== */
 
 function toggleTaskDone(row) {
   if (!ensureConfigured()) return;
@@ -134,16 +161,10 @@ function toggleTaskDone(row) {
 
   target.done = next.done;
   target.status = next.status;
-  saveCache();
-  renderAll(state);
-  playFeedbackSound(next.done ? 'done' : 'undo', state.prefs.soundEnabled);
+  saveCache(); render();
+  if (next.done) audioFx.playSuccess(); else audioFx.playClick();
 
-  enqueueOfflineOrSend(state, {
-    action: 'update',
-    targetRow: row,
-    expectedTask,
-    fields: { done: next.done }
-  }, syncCallbacks);
+  enqueueOfflineOrSend(state, { action: 'update', targetRow: row, expectedTask, fields: { done: next.done } }, syncCallbacks);
 
   if (next.done) {
     showToast(`Виконано: ${expectedTask}`, 'success', {
@@ -151,20 +172,23 @@ function toggleTaskDone(row) {
       onClick: () => {
         const cur = findTaskByRow(row) || state.tasks.find((t) => t.task === expectedTask);
         if (!cur) return;
-        cur.done = prevDone;
-        cur.status = prevStatus;
-        saveCache();
-        renderAll(state);
-        playFeedbackSound('undo', state.prefs.soundEnabled);
-        enqueueOfflineOrSend(state, {
-          action: 'update',
-          targetRow: cur.row,
-          expectedTask: cur.task,
-          fields: { done: prevDone, status: prevStatus }
-        }, syncCallbacks);
+        cur.done = prevDone; cur.status = prevStatus;
+        saveCache(); render(); audioFx.playClick();
+        enqueueOfflineOrSend(state, { action: 'update', targetRow: cur.row, expectedTask: cur.task, fields: { done: prevDone, status: prevStatus } }, syncCallbacks);
       }
     });
   }
+}
+
+function toggleTaskPin(row) {
+  if (!ensureConfigured()) return;
+  const target = findTaskByRow(row);
+  if (!target) return;
+  const meta = parseTaskMeta(target.notes);
+  meta.pinned = !meta.pinned;
+  target.notes = serializeTaskMeta(meta);
+  saveCache(); render(); audioFx.playClick();
+  enqueueOfflineOrSend(state, { action: 'update', targetRow: row, expectedTask: target.task, fields: { notes: target.notes } }, syncCallbacks);
 }
 
 function quickChangeStatus(row, newStatus) {
@@ -176,16 +200,47 @@ function quickChangeStatus(row, newStatus) {
   const next = reconcileClientDoneStatus(target.done, newStatus, target.done, target.status, 'status');
   target.done = next.done;
   target.status = next.status;
-  saveCache();
-  renderAll(state);
-  if (next.done) playFeedbackSound('done', state.prefs.soundEnabled);
+  saveCache(); render();
+  if (next.done) audioFx.playSuccess(); else audioFx.playClick();
+
+  enqueueOfflineOrSend(state, { action: 'update', targetRow: row, expectedTask, fields: { status: next.status } }, syncCallbacks);
+}
+
+function handleInlineQuickCreate(status, rawTitle) {
+  if (!ensureConfigured()) return;
+  const taskTitle = String(rawTitle || '').trim();
+  if (!taskTitle) return;
+
+  const sphere = state.activeSphere !== 'Усі' ? state.activeSphere : 'Життя';
+  const priority = state.activePriority !== 'Усі' ? state.activePriority : 'Середній';
+  const notes = state.activeTag || '';
+  const deadline = state.quickFilter === 'today' ? getOffsetDateStr(0) : '';
+
+  state.tasks.push({ row: tempRowSeq--, done: false, sphere, task: taskTitle, status, priority, deadline, time: '', notes, inCalendar: false });
+  saveCache(); render(); audioFx.playClick();
+  document.querySelector(`.inline-add-form[data-inline-status="${CSS.escape(status)}"] .inline-add-input`)?.focus();
 
   enqueueOfflineOrSend(state, {
-    action: 'update',
-    targetRow: row,
-    expectedTask,
-    fields: { status: next.status }
+    action: 'create',
+    fields: { sphere, task: taskTitle, status, priority, deadline, time: '', notes, addToCalendar: false },
+    successText: 'Картку додано'
   }, syncCallbacks);
+}
+
+function handleArchiveDoneClick(btnEl) {
+  if (!ensureConfigured()) return;
+  if (!btnEl.classList.contains('is-confirming')) {
+    btnEl.classList.add('is-confirming');
+    btnEl.textContent = 'Точно в Архів?';
+    if (state.archiveConfirmTimer) clearTimeout(state.archiveConfirmTimer);
+    state.archiveConfirmTimer = setTimeout(render, 3200);
+    return;
+  }
+  const doneCount = state.tasks.filter((t) => t.done).length;
+  if (!doneCount) return;
+  state.tasks = state.tasks.filter((t) => !t.done);
+  saveCache(); render(); audioFx.playSuccess();
+  enqueueOfflineOrSend(state, { action: 'archiveDone', fields: {}, successText: `Перенесено в аркуш «Архів»: ${doneCount}` }, syncCallbacks);
 }
 
 function syncCardToCalendar(row) {
@@ -193,343 +248,81 @@ function syncCardToCalendar(row) {
   const target = findTaskByRow(row);
   if (!target || target.inCalendar) return;
   if (!target.deadline) {
-    openTaskModal(target, true);
+    openTaskModal(appCtx, target, { focusDeadline: true });
     return showToast('Вкажіть дедлайн, щоб додати задачу в Календар', 'error');
   }
-
   target.inCalendar = true;
-  saveCache();
-  renderAll(state);
-  playFeedbackSound('create', state.prefs.soundEnabled);
-
-  enqueueOfflineOrSend(state, {
-    action: 'syncCalendar',
-    targetRow: row,
-    expectedTask: target.task,
-    fields: {},
-    successText: 'Подію створено в Google Календарі'
-  }, syncCallbacks);
+  saveCache(); render(); audioFx.playClick();
+  enqueueOfflineOrSend(state, { action: 'syncCalendar', targetRow: row, expectedTask: target.task, fields: {}, successText: 'Подію створено в Google Календарі' }, syncCallbacks);
 }
 
-/* ======================== Модальні вікна та форми ======================== */
-
-function resetDeleteConfirm() {
-  if (state.deleteConfirmTimer) clearTimeout(state.deleteConfirmTimer);
-  state.deleteConfirmTimer = null;
-  const delBtn = $('btnDeleteTask');
-  if (delBtn) {
-    delBtn.classList.remove('is-confirming');
-    delBtn.textContent = 'Видалити';
-  }
-}
-
-function resetLogoutConfirm() {
-  if (state.logoutConfirmTimer) clearTimeout(state.logoutConfirmTimer);
-  state.logoutConfirmTimer = null;
-  const btn = $('btnLogoutDevice');
-  if (btn) {
-    btn.classList.remove('is-confirming');
-    btn.textContent = 'Вийти і очистити пристрій';
-  }
-}
-
-function openTaskModal(task = null, focusDeadline = false) {
-  const isEdit = Boolean(task);
-  state.editingRow = isEdit ? task.row : null;
-  resetDeleteConfirm();
-
-  $('taskModalTitle').textContent = isEdit ? 'Редагувати задачу' : 'Нова задача';
-  $('fieldRow').value = isEdit ? String(task.row) : '';
-  $('fieldTask').value = isEdit ? task.task : '';
-  $('fieldSphere').value = isEdit ? (task.sphere || 'Життя') : (state.activeSphere !== 'Усі' ? state.activeSphere : 'Життя');
-  $('fieldStatus').value = isEdit ? (task.status || 'В роботі') : (state.activeStatus === 'Готово' ? 'В роботі' : state.activeStatus);
-  $('fieldPriority').value = isEdit ? (task.priority || 'Середній') : 'Середній';
-  $('fieldDeadline').value = isEdit ? (task.deadline || '') : '';
-  $('fieldTime').value = isEdit ? (task.time || '') : '';
-  $('fieldNotes').value = isEdit ? (task.notes || '') : '';
-  $('fieldDone').checked = isEdit ? Boolean(task.done) : false;
-  $('doneToggleWrap').hidden = !isEdit;
-
-  const calCheck = $('fieldAddToCalendar');
-  calCheck.checked = isEdit ? Boolean(task.inCalendar) : false;
-  calCheck.disabled = isEdit ? Boolean(task.inCalendar) : false;
-  $('calendarToggleText').textContent = isEdit
-    ? (task.inCalendar ? 'Вже в Календарі' : 'Додати в Календар')
-    : 'Одразу в Календар';
-  $('btnDeleteTask').hidden = !isEdit;
-
-  openModal('taskModal');
-  setTimeout(() => $(focusDeadline ? 'fieldDeadline' : 'fieldTask').focus(), 40);
-}
-
-function handleTaskFormSubmit(e) {
-  e.preventDefault();
-  if (!ensureConfigured()) return;
-
-  const taskTitle = $('fieldTask').value.trim();
-  if (!taskTitle) {
-    $('fieldTask').focus();
-    return showToast('Введіть назву задачі', 'error');
-  }
-
-  const sphere = $('fieldSphere').value;
-  const rawStatus = $('fieldStatus').value;
-  const priority = $('fieldPriority').value;
-  const deadline = $('fieldDeadline').value.trim();
-  const time = $('fieldTime').value.trim();
-  const notes = $('fieldNotes').value.trim();
-  const doneChecked = $('fieldDone').checked;
-  const wantCalendar = !$('fieldAddToCalendar').disabled && $('fieldAddToCalendar').checked;
-
-  if (wantCalendar && !deadline) {
-    $('fieldDeadline').focus();
-    return showToast('Вкажіть дедлайн, щоб додати подію в Календар', 'error');
-  }
-
-  if (state.editingRow === null) {
-    const synced = reconcileClientDoneStatus(false, rawStatus, false, 'В роботі', 'status');
-    state.tasks.push({
-      row: tempRowSeq--,
-      done: synced.done,
-      sphere,
-      task: taskTitle,
-      status: synced.status,
-      priority,
-      deadline,
-      time,
-      notes,
-      inCalendar: wantCalendar
-    });
-    if (state.activeStatus !== synced.status && window.innerWidth < 960) state.activeStatus = synced.status;
-    saveCache();
-    renderAll(state);
-    closeModal('taskModal', resetDeleteConfirm);
-    playFeedbackSound('create', state.prefs.soundEnabled);
-
-    enqueueOfflineOrSend(state, {
-      action: 'create',
-      fields: { sphere, task: taskTitle, status: synced.status, priority, deadline, time, notes, addToCalendar: wantCalendar },
-      successText: 'Задачу створено'
-    }, syncCallbacks);
-    return;
-  }
-
-  const existing = findTaskByRow(state.editingRow);
-  if (!existing) return closeModal('taskModal', resetDeleteConfirm);
-
-  const expectedTask = existing.task;
-  const row = existing.row;
-  const synced = reconcileClientDoneStatus(doneChecked, rawStatus, existing.done, existing.status, 'both');
-  Object.assign(existing, {
-    done: synced.done,
-    sphere,
-    task: taskTitle,
-    status: synced.status,
-    priority,
-    deadline,
-    time,
-    notes,
-    inCalendar: existing.inCalendar || wantCalendar
-  });
-  saveCache();
-  renderAll(state);
-  closeModal('taskModal', resetDeleteConfirm);
-  playFeedbackSound('create', state.prefs.soundEnabled);
-
-  enqueueOfflineOrSend(state, {
-    action: 'update',
-    targetRow: row,
-    expectedTask,
-    fields: { done: synced.done, sphere, task: taskTitle, status: synced.status, priority, deadline, time, notes, addToCalendar: wantCalendar },
-    successText: 'Зміни збережено'
-  }, syncCallbacks);
-}
-
-function handleDeleteClick() {
-  if (state.editingRow === null) return;
-  const delBtn = $('btnDeleteTask');
-  if (!delBtn.classList.contains('is-confirming')) {
-    delBtn.classList.add('is-confirming');
-    delBtn.textContent = 'Точно видалити?';
-    state.deleteConfirmTimer = setTimeout(resetDeleteConfirm, 3200);
-    return;
-  }
-
-  const target = findTaskByRow(state.editingRow);
-  if (!target) return closeModal('taskModal', resetDeleteConfirm);
-
-  const removedCopy = structuredClone(target);
-  const deleteKey = `${removedCopy.row}_${Date.now()}`;
-  state.tasks = state.tasks.filter((t) => t.row !== removedCopy.row);
-  saveCache();
-  renderAll(state);
-  closeModal('taskModal', resetDeleteConfirm);
-  playFeedbackSound('undo', state.prefs.soundEnabled);
-
-  const timerId = setTimeout(() => {
-    pendingDeleteTimers.delete(deleteKey);
-    enqueueOfflineOrSend(state, {
-      action: 'delete',
-      targetRow: removedCopy.row,
-      expectedTask: removedCopy.task,
-      fields: {},
-      successText: 'Задачу видалено'
-    }, syncCallbacks);
-  }, 4000);
-  pendingDeleteTimers.set(deleteKey, timerId);
-
-  showToast(`Видалено: ${removedCopy.task}`, '', {
-    label: 'Скасувати',
-    onClick: () => {
-      const pending = pendingDeleteTimers.get(deleteKey);
-      if (pending) {
-        clearTimeout(pending);
-        pendingDeleteTimers.delete(deleteKey);
-        state.tasks.push(removedCopy);
-        saveCache();
-        renderAll(state);
-        playFeedbackSound('create', state.prefs.soundEnabled);
-        showToast('Видалення скасовано', 'success');
-      }
-    }
-  });
-}
-
-function populateSettingsModal() {
-  $('fieldApiUrl').value = state.config.url || '';
-  $('fieldPin').value = state.config.pin || '';
-  $('fieldSoundEnabled').checked = Boolean(state.prefs.soundEnabled);
-  resetLogoutConfirm();
-  updateLastSyncText(state.lastSyncAt);
-}
-
-async function handleSettingsSubmit(e) {
-  e.preventDefault();
-  const cleanUrl = safeApiUrl($('fieldApiUrl').value);
-  const pin = $('fieldPin').value.trim();
-  if (!cleanUrl) {
-    $('fieldApiUrl').focus();
-    return showToast('Вкажіть URL Google Apps Script (https://script.google.com/...)', 'error');
-  }
-  if (!pin) {
-    $('fieldPin').focus();
-    return showToast('Введіть секретний PIN', 'error');
-  }
-
-  state.config = { url: cleanUrl, pin };
-  saveJson(STORAGE_CONFIG, state.config);
-
-  const btn = $('btnSaveSettings');
-  btn.disabled = true;
-  btn.textContent = 'Перевірка...';
-  const ok = await refreshFromServer(true);
-  btn.disabled = false;
-  btn.textContent = 'Зберегти і підключити';
-  if (ok) {
-    closeModal('settingsModal', resetLogoutConfirm);
-    showToast('Таблицю підключено', 'success');
-  }
-}
-
-function handleBulkCalendarSync() {
-  if (!ensureConfigured()) return;
-  const pendingCount = state.tasks.filter((t) => !t.done && !t.inCalendar && t.deadline).length;
-  if (pendingCount === 0) return showToast('Немає активних задач із дедлайном без Календаря');
-
-  state.tasks.forEach((t) => {
-    if (!t.done && !t.inCalendar && t.deadline) t.inCalendar = true;
-  });
-  saveCache();
-  renderAll(state);
-  closeModal('settingsModal', resetLogoutConfirm);
-
-  enqueueOfflineOrSend(state, {
-    action: 'syncCalendar',
-    targetRow: null,
-    fields: {},
-    successText: `Додано подій у Календар: ${pendingCount}`
-  }, syncCallbacks);
-}
-
-function handleLogoutDevice() {
-  const btn = $('btnLogoutDevice');
-  if (!btn.classList.contains('is-confirming')) {
-    btn.classList.add('is-confirming');
-    btn.textContent = 'Підтвердити очищення?';
-    state.logoutConfirmTimer = setTimeout(resetLogoutConfirm, 3200);
-    return;
-  }
-
-  localStorage.removeItem(STORAGE_CONFIG);
-  localStorage.removeItem(STORAGE_CACHE);
-  localStorage.removeItem(STORAGE_QUEUE);
-  state.config = { url: '', pin: '' };
-  state.tasks = [];
-  state.pendingQueue = [];
-  state.lastSyncAt = null;
-  setLastServerSnapshot(null);
-  savePendingQueue([]);
-  renderAll(state);
-  populateSettingsModal();
-  setSyncIndicator('', 'Не підключено');
-  showToast('Дані та PIN видалено з цього пристрою', 'success');
-}
-
-/* ======================== Події, DnD та хоткеї ======================== */
+/* ======================== Події, DnD та клавіатура ======================== */
 
 function bindEvents() {
+  $('viewSwitcher').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-view]');
+    if (btn) { audioFx.playClick(); state.activeView = btn.dataset.view; render(); }
+  });
   $('sphereBar').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-sphere]');
-    if (btn) { state.activeSphere = btn.dataset.sphere; renderAll(state); }
+    if (btn) { audioFx.playClick(); state.activeSphere = btn.dataset.sphere; render(); }
   });
-
   $('statusTabs').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-status]');
-    if (btn) { state.activeStatus = btn.dataset.status; renderAll(state); }
+    if (btn) { audioFx.playClick(); state.activeStatus = btn.dataset.status; render(); }
+  });
+  $('filterPriority').addEventListener('change', (e) => { state.activePriority = e.target.value; render(); });
+  $('btnClearTag').addEventListener('click', () => { state.activeTag = ''; render(); });
+
+  $('statActivePill').addEventListener('click', () => { state.quickFilter = 'all'; render(); });
+  $('statTodayPill').addEventListener('click', () => { state.quickFilter = state.quickFilter === 'today' ? 'all' : 'today'; render(); });
+  $('statOverduePill').addEventListener('click', () => { state.quickFilter = state.quickFilter === 'overdue' ? 'all' : 'overdue'; render(); });
+
+  $('btnFxMode').addEventListener('click', () => {
+    state.prefs.fx3d = !state.prefs.fx3d;
+    saveJson(STORAGE_PREFS, state.prefs);
+    audioFx.playClick();
+    render();
   });
 
-  $('statActivePill').addEventListener('click', () => {
-    state.quickFilter = 'all';
-    renderAll(state);
-  });
-  $('statTodayPill').addEventListener('click', () => {
-    state.quickFilter = state.quickFilter === 'today' ? 'all' : 'today';
-    renderAll(state);
-  });
-  $('statOverduePill').addEventListener('click', () => {
-    state.quickFilter = state.quickFilter === 'overdue' ? 'all' : 'overdue';
-    renderAll(state);
-  });
-
-  $('fieldSearch').addEventListener('input', (e) => {
-    state.searchQuery = e.target.value.trim();
-    renderAll(state);
-  });
-  $('btnClearSearch').addEventListener('click', () => {
-    $('fieldSearch').value = '';
-    state.searchQuery = '';
-    renderAll(state);
-    $('fieldSearch').focus();
-  });
+  $('fieldSearch').addEventListener('input', (e) => { state.searchQuery = e.target.value.trim(); render(); });
+  $('btnClearSearch').addEventListener('click', () => { $('fieldSearch').value = ''; state.searchQuery = ''; render(); $('fieldSearch').focus(); });
 
   const board = $('board');
-  board.addEventListener('click', (e) => {
-    if (e.target.closest('.note-link')) return;
-    if (e.target.closest('[data-action="open-settings"]')) { populateSettingsModal(); openModal('settingsModal'); return; }
-    if (e.target.closest('[data-action="reset-filters"]')) {
-      state.quickFilter = 'all';
-      state.searchQuery = '';
-      $('fieldSearch').value = '';
-      renderAll(state);
+  board.addEventListener('submit', (e) => {
+    const form = e.target.closest('.inline-add-form');
+    if (!form) return;
+    e.preventDefault();
+    const inp = form.querySelector('.inline-add-input');
+    if (inp && inp.value.trim()) handleInlineQuickCreate(form.dataset.inlineStatus, inp.value);
+  });
+
+  board.addEventListener('click', async (e) => {
+    if (e.target.closest('.note-link') || e.target.closest('.inline-add-form')) return;
+    const actEl = e.target.closest('[data-action]');
+    if (actEl) {
+      e.stopPropagation();
+      const act = actEl.dataset.action;
+      if (act === 'open-settings') openSettingsModal(appCtx);
+      else if (act === 'reset-filters') { state.quickFilter = 'all'; state.activePriority = 'Усі'; state.activeTag = ''; state.searchQuery = ''; $('filterPriority').value = 'Усі'; $('fieldSearch').value = ''; render(); }
+      else if (act === 'toggle-done') toggleTaskDone(Number(actEl.dataset.row));
+      else if (act === 'toggle-pin') toggleTaskPin(Number(actEl.dataset.row));
+      else if (act === 'sync-cal') syncCardToCalendar(Number(actEl.dataset.row));
+      else if (act === 'tag-click') { state.activeTag = state.activeTag === actEl.dataset.tag ? '' : actEl.dataset.tag; audioFx.playClick(); render(); }
+      else if (act === 'copy-code') { if (await copyToClipboard(actEl.dataset.code)) { audioFx.playClick(); showToast(`Скопійовано: ${actEl.dataset.code}`, 'success'); } }
+      else if (act === 'focus-inline-add') board.querySelector(`.inline-add-form[data-inline-status="${CSS.escape(actEl.dataset.status)}"] .inline-add-input`)?.focus();
+      else if (act === 'archive-done') handleArchiveDoneClick(actEl);
+      else if (act === 'open-task') openTaskModal(appCtx, findTaskByRow(Number(actEl.dataset.row)));
+      else if (act === 'add-on-date') openTaskModal(appCtx, null, { defaultDate: actEl.dataset.date });
+      else if (act === 'cal-prev') { if (--state.calMonth < 0) { state.calMonth = 11; state.calYear--; } render(); }
+      else if (act === 'cal-next') { if (++state.calMonth > 11) { state.calMonth = 0; state.calYear++; } render(); }
+      else if (act === 'cal-today') { const d = new Date(); state.calYear = d.getFullYear(); state.calMonth = d.getMonth(); render(); }
+      else if (act === 'jump-sphere') { state.activeSphere = actEl.dataset.sphere; state.activeView = 'board'; audioFx.playClick(); render(); }
       return;
     }
-    const checkBtn = e.target.closest('[data-action="toggle-done"]');
-    if (checkBtn) { e.stopPropagation(); toggleTaskDone(Number(checkBtn.dataset.row)); return; }
-    const calBtn = e.target.closest('[data-action="sync-cal"]');
-    if (calBtn) { e.stopPropagation(); syncCardToCalendar(Number(calBtn.dataset.row)); return; }
     if (e.target.closest('.status-quick')) { e.stopPropagation(); return; }
     const card = e.target.closest('.task-card');
-    if (card) openTaskModal(findTaskByRow(Number(card.dataset.row)));
+    if (card) openTaskModal(appCtx, findTaskByRow(Number(card.dataset.row)));
   });
 
   board.addEventListener('change', (e) => {
@@ -537,32 +330,23 @@ function bindEvents() {
     if (select) { e.stopPropagation(); quickChangeStatus(Number(select.dataset.row), select.value); }
   });
 
-  // Desktop Drag & Drop між колонками
   board.addEventListener('dragstart', (e) => {
     const card = e.target.closest('.task-card');
     if (!card) return;
     draggedRow = Number(card.dataset.row);
     card.classList.add('is-dragging');
-    if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', String(draggedRow));
-    }
+    e.dataTransfer?.setData('text/plain', String(draggedRow));
   });
   board.addEventListener('dragend', (e) => {
-    const card = e.target.closest('.task-card');
-    if (card) card.classList.remove('is-dragging');
+    e.target.closest('.task-card')?.classList.remove('is-dragging');
     draggedRow = null;
     board.querySelectorAll('.column.is-drop-target').forEach((c) => c.classList.remove('is-drop-target'));
   });
   board.addEventListener('dragover', (e) => {
-    if (draggedRow === null) return;
-    const col = e.target.closest('.column[data-drop-status]');
+    const col = draggedRow !== null ? e.target.closest('.column[data-drop-status]') : null;
     if (!col) return;
     e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-    board.querySelectorAll('.column.is-drop-target').forEach((c) => {
-      if (c !== col) c.classList.remove('is-drop-target');
-    });
+    board.querySelectorAll('.column.is-drop-target').forEach((c) => { if (c !== col) c.classList.remove('is-drop-target'); });
     col.classList.add('is-drop-target');
   });
   board.addEventListener('dragleave', (e) => {
@@ -578,115 +362,52 @@ function bindEvents() {
     draggedRow = null;
   });
 
-  // Швидкі кнопки дедлайну в модалці
-  $('quickDates').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-quick-date]');
-    if (!btn) return;
-    const mode = btn.dataset.quickDate;
-    $('fieldDeadline').value = mode === 'clear' ? '' : getOffsetDateStr(Number(mode));
-    if (mode === 'clear') $('fieldTime').value = '';
-  });
-
-  $('btnAdd').addEventListener('click', () => openTaskModal(null));
+  $('btnAdd').addEventListener('click', () => openTaskModal(appCtx, null));
   $('btnRefresh').addEventListener('click', () => refreshFromServer(false));
-  $('btnSettings').addEventListener('click', () => { populateSettingsModal(); openModal('settingsModal'); });
-  $('fieldDone').addEventListener('change', (e) => {
-    const st = $('fieldStatus');
-    if (e.target.checked) st.value = 'Готово';
-    else if (st.value === 'Готово') st.value = 'В роботі';
-  });
-  $('fieldStatus').addEventListener('change', (e) => { $('fieldDone').checked = e.target.value === 'Готово'; });
-  $('fieldSoundEnabled').addEventListener('change', (e) => {
-    state.prefs.soundEnabled = e.target.checked;
-    saveJson(STORAGE_PREFS, state.prefs);
-    if (e.target.checked) playFeedbackSound('create', true);
-  });
+  $('btnSettings').addEventListener('click', () => openSettingsModal(appCtx));
 
-  $('taskForm').addEventListener('submit', handleTaskFormSubmit);
-  $('btnDeleteTask').addEventListener('click', handleDeleteClick);
-  $('settingsForm').addEventListener('submit', handleSettingsSubmit);
-  $('btnSyncAllCalendar').addEventListener('click', handleBulkCalendarSync);
-  $('btnLogoutDevice').addEventListener('click', handleLogoutDevice);
-
-  $('btnTogglePin').addEventListener('click', (e) => {
-    const input = $('fieldPin');
-    const show = input.type === 'password';
-    input.type = show ? 'text' : 'password';
-    e.currentTarget.textContent = show ? 'Сховати' : 'Показати';
-  });
-
-  document.querySelectorAll('[data-close]').forEach((btn) =>
-    btn.addEventListener('click', () => closeModal(btn.dataset.close, resetDeleteConfirm))
-  );
-  document.querySelectorAll('.modal-backdrop').forEach((bd) =>
-    bd.addEventListener('click', (e) => { if (e.target === bd) closeModal(bd.id, resetDeleteConfirm); })
-  );
-
-  // Хоткеї ПК: N (нова задача), / (пошук), R (оновити), Escape
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (!$('taskModal').hidden) { closeModal('taskModal', resetDeleteConfirm); return; }
-      if (!$('settingsModal').hidden) { closeModal('settingsModal', resetLogoutConfirm); return; }
-      if (state.searchQuery) {
-        $('fieldSearch').value = '';
-        state.searchQuery = '';
-        renderAll(state);
-      }
+      if (!$('taskModal').hidden) return closeModal('taskModal', () => resetDeleteConfirm(state));
+      if (!$('settingsModal').hidden) return closeModal('settingsModal', () => resetLogoutConfirm(state));
+      if (state.searchQuery) { $('fieldSearch').value = ''; state.searchQuery = ''; render(); }
       return;
     }
-
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.ctrlKey || e.metaKey || e.altKey) return;
     if (!$('taskModal').hidden || !$('settingsModal').hidden) return;
-
-    if (e.key === '/') {
-      e.preventDefault();
-      $('fieldSearch').focus();
-    } else if (e.code === 'KeyN') {
-      e.preventDefault();
-      openTaskModal(null);
-    } else if (e.code === 'KeyR') {
-      e.preventDefault();
-      refreshFromServer(false);
-    }
+    if (e.key === '/') { e.preventDefault(); $('fieldSearch').focus(); }
+    else if (e.code === 'KeyN') { e.preventDefault(); openTaskModal(appCtx, null); }
+    else if (e.code === 'KeyR') { e.preventDefault(); refreshFromServer(false); }
   });
 
-  window.addEventListener('online', () => {
-    showToast('З’єднання відновлено', 'success');
-    refreshFromServer(true);
-  });
-
+  window.addEventListener('online', () => { showToast('З’єднання відновлено', 'success'); refreshFromServer(true); });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') return;
-    if (!hasValidConfig(state.config) || !navigator.onLine) return;
-    const stale = !state.lastSyncAt || (Date.now() - state.lastSyncAt > 20000);
-    if (stale || state.pendingQueue.length > 0) refreshFromServer(true);
+    if (document.visibilityState === 'visible' && hasValidConfig(state.config) && navigator.onLine) {
+      if (!state.lastSyncAt || (Date.now() - state.lastSyncAt > 20000) || state.pendingQueue.length > 0) refreshFromServer(true);
+    }
   });
 }
 
 function init() {
+  audioFx.setEnabled(state.prefs.soundEnabled !== false);
+  initTactile3D(() => state.prefs.fx3d !== false);
+  initTimersDock({ onNotify: showToast });
+  initModals(appCtx);
+
   const cached = loadJson(STORAGE_CACHE, null);
   if (cached && Array.isArray(cached.tasks)) {
     state.tasks = cached.tasks;
     state.lastSyncAt = cached.lastSyncAt || null;
   }
-  if (hasValidConfig(state.config) && state.tasks.length === 0) {
-    state.isInitialLoading = true;
-  }
+  if (hasValidConfig(state.config) && state.tasks.length === 0) state.isInitialLoading = true;
 
   bindEvents();
-  renderAll(state);
+  render();
 
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
-  }
-
-  if (!hasValidConfig(state.config)) {
-    populateSettingsModal();
-    openModal('settingsModal');
-  } else {
-    refreshFromServer(true);
-  }
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+  if (!hasValidConfig(state.config)) openSettingsModal(appCtx);
+  else refreshFromServer(true);
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

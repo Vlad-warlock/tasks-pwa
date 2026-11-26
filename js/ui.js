@@ -2,13 +2,16 @@ import {
   STATUS_COLUMNS,
   SPHERES,
   escapeHtml,
-  linkifyNotes,
+  safeSheetUrl,
+  renderRichText,
   getTodayLocal,
   isTaskOverdue,
-  formatDeadlineLabel,
+  getDeadlineInfo,
   sortColumnTasks
 } from './utils.js';
+import { parseTaskMeta, formatRepeatBadge } from './notes-meta.js';
 import { hasValidConfig } from './api.js';
+import { renderCalendarView, renderDashboardView } from './views.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -86,9 +89,17 @@ export function closeModal(id, onAfterClose) {
   if (onAfterClose) onAfterClose();
 }
 
-function matchesSearch(task, query) {
-  if (!query) return true;
-  const q = query.toLowerCase();
+function matchesSearchAndFilters(task, meta, state, nowInfo) {
+  if (state.activePriority !== 'Усі' && task.priority !== state.activePriority) return false;
+  if (state.activeTag) {
+    const hasTag = meta.tags.some((t) => t.toLowerCase() === state.activeTag.toLowerCase());
+    if (!hasTag) return false;
+  }
+  if (state.quickFilter === 'today' && (task.done || task.deadline !== nowInfo.date)) return false;
+  if (state.quickFilter === 'overdue' && !isTaskOverdue(task, nowInfo)) return false;
+
+  if (!state.searchQuery) return true;
+  const q = state.searchQuery.toLowerCase();
   return (
     String(task.task || '').toLowerCase().includes(q) ||
     String(task.notes || '').toLowerCase().includes(q) ||
@@ -107,31 +118,61 @@ function renderSkeletonColumn(status, isActive) {
       <div class="task-list">
         <div class="skeleton-card"></div>
         <div class="skeleton-card is-short"></div>
-        <div class="skeleton-card"></div>
       </div>
     </section>`;
 }
 
 function renderEmptyColumn(status, state) {
   if (!hasValidConfig(state.config)) {
-    return `<div class="empty-state"><p>Таблицю ще не підключено.</p><button type="button" class="btn btn-secondary" data-action="open-settings">Відкрити налаштування</button></div>`;
+    return `<div class="empty-state"><p>Таблицю ще не підключено.</p><button type="button" class="btn btn-secondary" data-action="open-settings">Підключити</button></div>`;
   }
-  if (state.searchQuery || state.quickFilter !== 'all') {
-    return `<div class="empty-state"><p>За поточним фільтром тут порожньо.</p><button type="button" class="btn btn-ghost" data-action="reset-filters">Скинути фільтри</button></div>`;
+  if (state.searchQuery || state.quickFilter !== 'all' || state.activePriority !== 'Усі' || state.activeTag) {
+    return `<div class="empty-state"><p>За фільтром задач немає.</p><button type="button" class="btn btn-ghost" data-action="reset-filters">Скинути фільтри</button></div>`;
   }
-  const text = status === 'Готово'
-    ? 'Виконаних задач у цій вибірці ще немає.'
-    : `У колонці «${escapeHtml(status)}» зараз порожньо.`;
-  return `<div class="empty-state"><p>${text}</p></div>`;
+  const text = status === 'Готово' ? 'Виконаних задач ще немає.' : 'Карток поки немає.';
+  return `<div class="empty-state is-compact"><p>${text}</p></div>`;
 }
 
-function renderTaskCard(task, nowInfo) {
-  const overdue = isTaskOverdue(task, nowInfo);
-  const isToday = !task.done && !overdue && task.deadline === nowInfo.date;
-  const dlLabel = formatDeadlineLabel(task.deadline, task.time, nowInfo.date);
-  const dlHtml = dlLabel
-    ? `<span class="badge badge-deadline${overdue ? ' is-overdue' : isToday ? ' is-today' : ''}">${escapeHtml(dlLabel)}</span>`
+function renderInlineAddComposer(status) {
+  if (status === 'Готово') return '';
+  return `
+    <form class="inline-add-form" data-inline-status="${escapeHtml(status)}">
+      <input type="text" class="inline-add-input" name="quickTitle" placeholder="+ Додати картку..." autocomplete="off" aria-label="Швидко додати картку у ${escapeHtml(status)}">
+      <button type="submit" class="inline-add-btn">Додати</button>
+    </form>`;
+}
+
+function renderTaskCard(task, meta, nowInfo) {
+  const dl = getDeadlineInfo(task, nowInfo);
+  const dlCls = dl.overdue ? ' is-overdue' : dl.urgent ? ' is-urgent' : dl.isToday ? ' is-today' : '';
+  const dlHtml = dl.label
+    ? `<span class="badge badge-deadline${dlCls}">${escapeHtml(dl.label)}${dl.countdown ? ` · ${escapeHtml(dl.countdown)}` : ''}</span>`
     : '';
+
+  const repText = formatRepeatBadge(meta.repeat);
+  const repHtml = repText ? `<span class="badge badge-repeat" title="Повторювана задача">↻ ${escapeHtml(repText)}</span>` : '';
+
+  const totalChecks = meta.checklist.length;
+  const doneChecks = meta.checklist.filter((c) => c.done).length;
+  const checklistHtml = totalChecks > 0
+    ? `
+      <div class="card-checklist-bar${doneChecks === totalChecks ? ' is-complete' : ''}">
+        <span class="cl-count">✓ ${doneChecks}/${totalChecks}</span>
+        <progress class="cl-progress" value="${doneChecks}" max="${totalChecks}"></progress>
+      </div>`
+    : '';
+
+  // Окремі теги (які не були прямо в реченні cleanNotes) + кнопка 1-клік копії для числових #кодів
+  const inlineSet = new Set((meta.cleanNotes.match(/#[a-zA-Zа-яА-ЯіїєґІЇЄҐ0-9_-]{1,28}/g) || []).map((x) => x.toLowerCase()));
+  const standaloneTags = meta.tags.filter((t) => !inlineSet.has(t.toLowerCase()));
+  const tagsHtml = standaloneTags.map((tag) => {
+    const isCode = /^#\d+$/.test(tag);
+    const copyBtn = isCode
+      ? `<button type="button" class="tag-copy-btn" data-action="copy-code" data-code="${escapeHtml(tag.slice(1))}" title="Скопіювати код ${escapeHtml(tag.slice(1))}">⧉</button>`
+      : '';
+    return `<span class="tag-chip-wrap"><button type="button" class="tag-chip" data-action="tag-click" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>${copyBtn}</span>`;
+  }).join('');
+
   const opts = STATUS_COLUMNS.map(
     (st) => `<option value="${escapeHtml(st)}"${st === task.status ? ' selected' : ''}>${escapeHtml(st)}</option>`
   ).join('');
@@ -139,19 +180,32 @@ function renderTaskCard(task, nowInfo) {
     ? `<span class="cal-synced" title="Додано в Google Календар"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 4.8"/></svg>Календар</span>`
     : `<button type="button" class="cal-btn" data-action="sync-cal" data-row="${task.row}" title="Додати в Google Календар">+ Календар</button>`;
 
-  const notesHtml = task.notes ? `<p class="task-notes">${linkifyNotes(task.notes)}</p>` : '';
+  const notesHtml = meta.cleanNotes ? `<p class="task-notes">${renderRichText(meta.cleanNotes)}</p>` : '';
+  const cardStateCls = [
+    task.done ? ' is-done' : '',
+    dl.overdue ? ' is-overdue-card' : dl.urgent ? ' is-urgent-card' : '',
+    meta.pinned && !task.done ? ' is-pinned' : ''
+  ].join('');
 
   return `
-    <article class="task-card${task.done ? ' is-done' : ''}${overdue ? ' is-overdue-card' : ''}" draggable="true" data-row="${task.row}" data-priority="${escapeHtml(task.priority)}">
+    <article class="task-card${cardStateCls}" draggable="true" data-row="${task.row}" data-priority="${escapeHtml(task.priority)}">
       <button type="button" class="task-check" data-action="toggle-done" data-row="${task.row}" aria-label="Перемкнути виконання">
         <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 4.5"/></svg>
       </button>
       <div class="task-main">
-        <div class="task-title-row"><h3 class="task-title">${escapeHtml(task.task)}</h3></div>
+        <div class="task-title-row">
+          <h3 class="task-title">${escapeHtml(task.task)}</h3>
+          ${!task.done ? `<button type="button" class="pin-btn${meta.pinned ? ' is-active' : ''}" data-action="toggle-pin" data-row="${task.row}" title="${meta.pinned ? 'Відкріпити згори' : 'Закріпити згори колонки'}" aria-label="Закріпити">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="${meta.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.6"><path d="M9.8 2.2l4 4-1.6 1.6-.9-.9-2.5 2.5.4 2.6-1.2 1.2L5.2 10.4 2.2 13.4l-.6-.6 3-3L1.8 7l1.2-1.2 2.6.4 2.5-2.5-.9-.9 1.6-1.6z"/></svg>
+          </button>` : ''}
+        </div>
         ${notesHtml}
+        ${checklistHtml}
+        ${tagsHtml ? `<div class="card-tags-row">${tagsHtml}</div>` : ''}
         <div class="task-meta">
           <span class="badge badge-sphere" data-sphere="${escapeHtml(task.sphere)}">${escapeHtml(task.sphere)}</span>
           ${dlHtml}
+          ${repHtml}
           <div class="card-actions-inline">
             ${calCtrl}
             <label class="status-quick" title="Змінити статус">
@@ -166,6 +220,8 @@ function renderTaskCard(task, nowInfo) {
 
 export function renderAll(state) {
   const nowInfo = getTodayLocal();
+  const metaMap = new Map();
+  for (const t of state.tasks) metaMap.set(t.row, parseTaskMeta(t.notes));
 
   for (const sp of SPHERES) {
     const count = state.tasks.filter((t) => !t.done && (sp === 'Усі' || t.sphere === sp)).length;
@@ -176,6 +232,29 @@ export function renderAll(state) {
   document.querySelectorAll('#sphereBar .chip').forEach((btn) => {
     btn.classList.toggle('is-active', btn.dataset.sphere === state.activeSphere);
   });
+
+  document.querySelectorAll('#viewSwitcher .view-tab').forEach((btn) => {
+    btn.classList.toggle('is-active', btn.dataset.view === state.activeView);
+  });
+
+  const sheetHref = safeSheetUrl(state.config.sheetUrl);
+  const sheetBtn = $('btnOpenSheet');
+  if (sheetBtn) {
+    sheetBtn.hidden = !sheetHref;
+    if (sheetHref) sheetBtn.href = sheetHref;
+  }
+
+  const fxBtn = $('btnFxMode');
+  if (fxBtn) {
+    fxBtn.textContent = state.prefs.fx3d ? 'FX 3D' : 'FX Eco';
+    fxBtn.classList.toggle('is-active', Boolean(state.prefs.fx3d));
+  }
+
+  const tagFilterEl = $('activeTagChip');
+  if (tagFilterEl) {
+    tagFilterEl.hidden = !state.activeTag;
+    if (state.activeTag) $('activeTagLabel').textContent = state.activeTag;
+  }
 
   const bySphere = state.activeSphere === 'Усі'
     ? state.tasks
@@ -189,7 +268,6 @@ export function renderAll(state) {
   $('statToday').textContent = String(todayCount);
   $('statOverdue').textContent = String(overdueCount);
 
-  $('statActivePill').classList.toggle('is-filter-active', state.quickFilter === 'all' && false);
   $('statTodayPill').classList.toggle('is-filter-active', state.quickFilter === 'today');
   $('statOverduePill').classList.toggle('has-overdue', overdueCount > 0);
   $('statOverduePill').classList.toggle('is-filter-active', state.quickFilter === 'overdue');
@@ -197,12 +275,10 @@ export function renderAll(state) {
   const clearBtn = $('btnClearSearch');
   if (clearBtn) clearBtn.hidden = !state.searchQuery;
 
-  const filtered = bySphere.filter((t) => {
-    if (state.quickFilter === 'today' && (t.done || t.deadline !== nowInfo.date)) return false;
-    if (state.quickFilter === 'overdue' && !isTaskOverdue(t, nowInfo)) return false;
-    return matchesSearch(t, state.searchQuery);
-  });
+  const filtered = bySphere.filter((t) => matchesSearchAndFilters(t, metaMap.get(t.row), state, nowInfo));
 
+  // Мобільні вкладки статусу потрібні лише в режимі «Дошка»
+  $('statusTabs').classList.toggle('is-view-hidden', state.activeView !== 'board');
   document.querySelectorAll('#statusTabs .status-tab').forEach((tab) => {
     const st = tab.dataset.status;
     tab.classList.toggle('is-active', st === state.activeStatus);
@@ -212,23 +288,51 @@ export function renderAll(state) {
 
   updatePendingBadge(state.pendingQueue.length);
 
-  if (state.isInitialLoading && state.tasks.length === 0) {
-    $('board').innerHTML = STATUS_COLUMNS.map((st) => renderSkeletonColumn(st, st === state.activeStatus)).join('');
+  const board = $('board');
+  board.dataset.viewMode = state.activeView;
+
+  if (state.activeView === 'calendar') {
+    board.innerHTML = renderCalendarView(filtered, state, nowInfo);
+    return;
+  }
+  if (state.activeView === 'dashboard') {
+    board.innerHTML = renderDashboardView(state.tasks, state, nowInfo);
     return;
   }
 
-  $('board').innerHTML = STATUS_COLUMNS.map((status) => {
-    const colTasks = sortColumnTasks(filtered.filter((t) => t.status === status), status);
+  if (state.isInitialLoading && state.tasks.length === 0) {
+    board.innerHTML = STATUS_COLUMNS.map((st) => renderSkeletonColumn(st, st === state.activeStatus)).join('');
+    return;
+  }
+
+  board.innerHTML = STATUS_COLUMNS.map((status) => {
+    const colTasks = sortColumnTasks(
+      filtered.filter((t) => t.status === status),
+      status,
+      (t) => metaMap.get(t.row)?.pinned
+    );
     const cardsHtml = colTasks.length
-      ? `<div class="task-list">${colTasks.map((t) => renderTaskCard(t, nowInfo)).join('')}</div>`
+      ? `<div class="task-list">${colTasks.map((t) => renderTaskCard(t, metaMap.get(t.row), nowInfo)).join('')}</div>`
       : renderEmptyColumn(status, state);
+
+    const headAction = status === 'Готово' && colTasks.length > 0
+      ? `<button type="button" class="col-head-btn is-archive" data-action="archive-done" title="Перенести виконані в аркуш «Архів»">Архів (${colTasks.length})</button>`
+      : status !== 'Готово'
+        ? `<button type="button" class="col-head-btn" data-action="focus-inline-add" data-status="${escapeHtml(status)}" title="Швидко додати картку">+</button>`
+        : '';
+
     return `
       <section class="column${status === state.activeStatus ? ' is-active' : ''}" data-column="${escapeHtml(status)}" data-drop-status="${escapeHtml(status)}">
         <div class="column-head">
-          <h2 class="column-title"><span class="col-dot" data-col-dot="${escapeHtml(status)}"></span>${escapeHtml(status)}</h2>
-          <span class="tab-badge">${colTasks.length}</span>
+          <h2 class="column-title">
+            <span class="col-dot" data-col-dot="${escapeHtml(status)}"></span>
+            <span>${escapeHtml(status)}</span>
+            <span class="tab-badge">${colTasks.length}</span>
+          </h2>
+          ${headAction}
         </div>
         ${cardsHtml}
+        ${renderInlineAddComposer(status)}
       </section>`;
   }).join('');
 }
