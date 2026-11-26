@@ -2,6 +2,7 @@ export const STORAGE_CONFIG = 'tasks_pwa_config_v1';
 export const STORAGE_CACHE = 'tasks_pwa_cache_v1';
 export const STORAGE_QUEUE = 'tasks_pwa_queue_v1';
 export const STORAGE_PREFS = 'tasks_pwa_prefs_v1';
+export const STORAGE_JOURNAL = 'tasks_pwa_journal_v1';
 
 // Класичний порядок воронки Trello зліва направо (як у вкладці «Канбан і Дашборд»)
 export const STATUS_COLUMNS = ['Беклог', 'Цей тиждень', 'В роботі', 'Готово'];
@@ -127,6 +128,15 @@ export function getTodayLocal() {
 export function getOffsetDateStr(daysOffset = 0) {
   const dt = new Date();
   dt.setDate(dt.getDate() + daysOffset);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+}
+
+export function shiftDateStr(ymd, deltaDays = 0) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return getOffsetDateStr(deltaDays);
+  const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
+  dt.setDate(dt.getDate() + deltaDays);
   const pad = (n) => String(n).padStart(2, '0');
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
 }

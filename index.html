@@ -17,6 +17,7 @@
   <link rel="manifest" href="./manifest.json">
   <link rel="stylesheet" href="./styles.css">
   <link rel="stylesheet" href="./board-views.css">
+  <link rel="stylesheet" href="./day-view.css">
 </head>
 <body>
   <header class="topbar">
@@ -30,6 +31,7 @@
           </div>
 
           <nav class="view-switcher" id="viewSwitcher" aria-label="Режим відображення">
+            <button type="button" class="view-tab" data-view="day">День</button>
             <button type="button" class="view-tab is-active" data-view="board">Дошка</button>
             <button type="button" class="view-tab" data-view="calendar">Календар</button>
             <button type="button" class="view-tab" data-view="dashboard">Дашборд</button>
@@ -134,6 +136,7 @@
   </header>
 
   <main class="board-wrap">
+    <div class="focus-banner-slot" id="focusBannerSlot" hidden></div>
     <div class="board" id="board" data-view-mode="board"></div>
   </main>
 

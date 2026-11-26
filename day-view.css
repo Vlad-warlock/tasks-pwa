@@ -1,0 +1,297 @@
+/* Стилі вкладки «День», плашки Фокусу на Дошці та графіка на Дашборді */
+
+.focus-banner-slot { margin-bottom: 10px; }
+.focus-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+}
+.focus-banner.is-collapsed {
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+.focus-banner-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.focus-banner-tag {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.14);
+  border: 1px solid rgba(59, 130, 246, 0.36);
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 650;
+}
+.focus-banner-text {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.focus-banner-text.is-placeholder { color: var(--text-dim); font-weight: 450; }
+.focus-banner-hide {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.focus-banner-hide:hover { color: var(--text-main); background: var(--bg-card); }
+.focus-banner-restore {
+  padding: 3px 9px;
+  border-radius: var(--radius);
+  border: 1px dashed var(--border-color);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.controls-row.is-view-hidden { display: none !important; }
+
+/* Вкладка «День» */
+.day-view { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.day-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.day-nav-group { display: flex; align-items: center; gap: 8px; }
+.day-date-title { margin: 0; font-size: 16px; font-weight: 700; min-width: 155px; text-align: center; }
+.day-toolbar-right { display: flex; align-items: center; gap: 8px; }
+.day-today-btn { min-height: 32px; padding: 0 10px; font-size: 12.5px; }
+.day-save-hint { font-size: 11.5px; color: var(--text-dim); }
+
+.day-card {
+  padding: 14px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.day-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.day-card-title { margin: 0; font-size: 14.5px; font-weight: 650; display: inline-flex; align-items: center; gap: 6px; }
+.day-hint { font-size: 11.5px; color: var(--text-dim); }
+
+.day-focus-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.day-columns-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+
+/* Звички та редактор */
+.habits-list { display: flex; flex-direction: column; gap: 7px; }
+.habit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background-color 0.14s ease;
+}
+.habit-row:hover { border-color: var(--border-strong); background: var(--bg-card-hover); }
+.habit-row.is-done { border-color: rgba(16, 185, 129, 0.45); background: rgba(16, 185, 129, 0.08); }
+.habit-check {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius);
+  border: 1.6px solid var(--border-strong);
+  background: var(--bg-app);
+  color: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.habit-row.is-done .habit-check { background: var(--success); border-color: var(--success); color: #ffffff; }
+.habit-name { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.habit-row.is-done .habit-name { color: #d1fae5; }
+.habit-streak {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.habit-streak.is-hot { background: rgba(245, 158, 11, 0.14); border-color: rgba(245, 158, 11, 0.45); color: #fcd34d; }
+.habit-streak.is-zero { color: var(--text-dim); }
+
+.habit-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+}
+.habit-edit-row, .habit-add-form { display: flex; gap: 6px; align-items: center; }
+.habit-rename-input, .habit-add-form input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 9px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  font-size: 16px;
+  outline: none;
+}
+.habit-rename-input:focus, .habit-add-form input:focus { border-color: var(--accent); }
+.habit-vis-btn { min-height: 34px; padding: 0 9px; font-size: 12px; }
+
+/* Оцінка дня 1-10 */
+.day-rating-pill {
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.rating-grid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 5px; }
+.rating-btn {
+  height: 34px;
+  padding: 0;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.rating-btn:hover { border-color: var(--border-strong); color: var(--text-main); }
+.rating-btn.is-active[data-tone="low"] { background: var(--danger); border-color: var(--danger); color: #ffffff; }
+.rating-btn.is-active[data-tone="mid"] { background: var(--amber); border-color: var(--amber); color: #111827; }
+.rating-btn.is-active[data-tone="high"] { background: var(--success); border-color: var(--success); color: #ffffff; }
+
+/* Місячна сітка звичок */
+.habit-matrix-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.habit-matrix { border-collapse: separate; border-spacing: 3px; width: max-content; min-width: 100%; }
+.hm-habit-col {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--bg-panel);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 3px 10px 3px 2px;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hm-day-head {
+  width: 24px;
+  min-width: 24px;
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  padding-bottom: 3px;
+}
+.hm-day-head.is-today { color: #93c5fd; font-weight: 750; }
+.hm-day-head.is-selected { text-decoration: underline; }
+.hm-cell-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: transparent;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.hm-cell-btn.is-today { border-color: rgba(59, 130, 246, 0.55); }
+.hm-cell-btn.is-selected { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28); }
+.hm-cell-btn.is-checked { background: var(--success); border-color: var(--success); color: #ffffff; }
+
+/* Графік динаміки дня на Дашборді */
+.dash-chart-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.dash-chart-kpis { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dash-mini-kpi {
+  padding: 4px 9px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.dash-mini-kpi strong { color: var(--text-main); font-variant-numeric: tabular-nums; }
+.dash-range-tabs { display: inline-flex; gap: 2px; padding: 2px; background: var(--bg-app); border: 1px solid var(--border-color); border-radius: var(--radius); }
+.dash-range-btn { height: 24px; padding: 0 8px; border: none; border-radius: 4px; background: transparent; color: var(--text-muted); font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.dash-range-btn.is-active { background: var(--bg-card-hover); color: #ffffff; }
+.dash-chart-box { width: 100%; overflow: hidden; }
+.dash-chart-svg { display: block; width: 100%; height: auto; max-height: 170px; }
+.dash-chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px;
+  background: var(--bg-card);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 720px) {
+  .day-focus-grid, .day-columns-grid { grid-template-columns: 1fr; }
+  .rating-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .day-card { padding: 12px; }
+  .hm-habit-col { max-width: 108px; font-size: 11.5px; }
+}

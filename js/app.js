@@ -2,13 +2,16 @@ import {
   STORAGE_CONFIG,
   STORAGE_CACHE,
   STORAGE_PREFS,
+  STORAGE_JOURNAL,
   loadJson,
   saveJson,
   safeSheetUrl,
   copyToClipboard,
+  getTodayLocal,
   getOffsetDateStr,
   reconcileClientDoneStatus
 } from './utils.js';
+import { normalizeJournal, createDayEventController } from './day-view.js';
 import { parseTaskMeta, serializeTaskMeta } from './notes-meta.js';
 import { audioFx, initTactile3D } from './fx.js';
 import { initTimersDock } from './timers-dock.js';
@@ -52,6 +55,10 @@ const state = {
   activeStatus: 'В роботі',
   calYear: nowInit.getFullYear(),
   calMonth: nowInit.getMonth(),
+  journal: normalizeJournal(loadJson(STORAGE_JOURNAL, null)),
+  dayDate: getTodayLocal().date,
+  dayEditHabits: false,
+  dashRangeDays: 14,
   quickFilter: 'all',
   searchQuery: '',
   editingRow: null,
@@ -67,6 +74,7 @@ let draggedRow = null;
 const pendingDeleteTimers = new Map();
 
 const saveCache = () => saveJson(STORAGE_CACHE, { tasks: state.tasks, lastSyncAt: state.lastSyncAt });
+const saveJournalCache = () => saveJson(STORAGE_JOURNAL, state.journal);
 const render = () => renderAll(state);
 const findTaskByRow = (row) => state.tasks.find((t) => t.row === Number(row));
 
@@ -90,6 +98,12 @@ const syncCallbacks = {
     saveCache();
     render();
     updateLastSyncText(state.lastSyncAt);
+  },
+  onJournalUpdated: (journal) => {
+    const editingDay = document.activeElement?.closest('[data-day-field], [data-habit-rename]');
+    if (journal && !editingDay) state.journal = normalizeJournal(journal);
+    saveJournalCache();
+    if (!editingDay) render();
   }
 };
 
@@ -125,11 +139,12 @@ async function refreshFromServer(silent = false) {
   if (state.pendingQueue.length > 0) await flushQueue(state, syncCallbacks);
   setSyncIndicator('syncing', 'Оновлення даних...');
   try {
-    const { tasks: fresh, sheetUrl } = await apiListTasks(state.config);
+    const { tasks: fresh, sheetUrl, journal } = await apiListTasks(state.config);
     if (sheetUrl) updateStoredSheetUrl(sheetUrl);
     state.isInitialLoading = false;
     if (state.inFlightCount === 0 && state.pendingQueue.length === 0) {
       state.tasks = fresh;
+      if (journal) { state.journal = normalizeJournal(journal); saveJournalCache(); }
       state.lastSyncAt = Date.now();
       saveCache();
       render();
@@ -259,9 +274,24 @@ function syncCardToCalendar(row) {
 /* ======================== Події, DnD та клавіатура ======================== */
 
 function bindEvents() {
+  const board = $('board');
+  const dayCtrl = createDayEventController(board, { state, render, syncCallbacks, onToast: showToast });
+
   $('viewSwitcher').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-view]');
-    if (btn) { audioFx.playClick(); state.activeView = btn.dataset.view; render(); }
+    if (btn) { dayCtrl.flush(); audioFx.playClick(); state.activeView = btn.dataset.view; render(); }
+  });
+  $('focusBannerSlot')?.addEventListener('click', (e) => {
+    const actEl = e.target.closest('[data-action]');
+    if (!actEl) return;
+    const act = actEl.dataset.action;
+    if (act === 'focus-banner-open') {
+      state.activeView = 'day'; state.dayDate = getTodayLocal().date; audioFx.playClick(); render();
+      $('dayFocusInput')?.focus();
+    } else if (act === 'focus-banner-hide' || act === 'focus-banner-show') {
+      state.prefs.hideFocusBanner = act === 'focus-banner-hide';
+      saveJson(STORAGE_PREFS, state.prefs); render();
+    }
   });
   $('sphereBar').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-sphere]');
@@ -288,7 +318,6 @@ function bindEvents() {
   $('fieldSearch').addEventListener('input', (e) => { state.searchQuery = e.target.value.trim(); render(); });
   $('btnClearSearch').addEventListener('click', () => { $('fieldSearch').value = ''; state.searchQuery = ''; render(); $('fieldSearch').focus(); });
 
-  const board = $('board');
   board.addEventListener('submit', (e) => {
     const form = e.target.closest('.inline-add-form');
     if (!form) return;
@@ -318,6 +347,7 @@ function bindEvents() {
       else if (act === 'cal-next') { if (++state.calMonth > 11) { state.calMonth = 0; state.calYear++; } render(); }
       else if (act === 'cal-today') { const d = new Date(); state.calYear = d.getFullYear(); state.calMonth = d.getMonth(); render(); }
       else if (act === 'jump-sphere') { state.activeSphere = actEl.dataset.sphere; state.activeView = 'board'; audioFx.playClick(); render(); }
+      else dayCtrl.handleAction(act, actEl);
       return;
     }
     if (e.target.closest('.status-quick')) { e.stopPropagation(); return; }

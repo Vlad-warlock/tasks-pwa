@@ -2,6 +2,7 @@ import { STORAGE_QUEUE, loadJson, saveJson, safeApiUrl } from './utils.js';
 
 let mutationChain = Promise.resolve();
 let lastServerSnapshot = null;
+let lastJournalSnapshot = null;
 
 export function setLastServerSnapshot(tasks) {
   lastServerSnapshot = Array.isArray(tasks) ? tasks : null;
@@ -58,11 +59,17 @@ export async function apiListTasks(config) {
   const data = await apiPost(config, { action: 'list' });
   const tasks = Array.isArray(data.tasks) ? data.tasks : [];
   lastServerSnapshot = tasks;
-  return { tasks, sheetUrl: data.sheetUrl || '' };
+  return { tasks, sheetUrl: data.sheetUrl || '', journal: data.journal || null };
 }
 
 function buildItemPayload(item) {
-  if (item.action === 'create' || item.action === 'archiveDone' || (item.action === 'syncCalendar' && item.targetRow == null)) {
+  if (
+    item.action === 'create' ||
+    item.action === 'archiveDone' ||
+    item.action === 'saveJournalDay' ||
+    item.action === 'saveJournalMeta' ||
+    (item.action === 'syncCalendar' && item.targetRow == null)
+  ) {
     return { action: item.action, ...item.fields };
   }
   return {
@@ -83,7 +90,23 @@ export function enqueueOfflineOrSend(state, item, callbacks) {
     successText: item.successText || ''
   };
 
-  state.pendingQueue.push(queueItem);
+  // Дедуплікація черги для частих автозбережень щоденника
+  const startIdx = state.inFlightCount > 0 ? 1 : 0;
+  let merged = false;
+  if (queueItem.action === 'saveJournalDay' || queueItem.action === 'saveJournalMeta') {
+    for (let i = startIdx; i < state.pendingQueue.length; i++) {
+      const existing = state.pendingQueue[i];
+      if (existing.action !== queueItem.action) continue;
+      if (queueItem.action === 'saveJournalMeta' || existing.fields?.date === queueItem.fields?.date) {
+        existing.fields = queueItem.fields;
+        existing.successText = queueItem.successText;
+        merged = true;
+        break;
+      }
+    }
+  }
+  if (!merged) state.pendingQueue.push(queueItem);
+
   savePendingQueue(state.pendingQueue);
   callbacks.onQueueChange();
 
@@ -115,6 +138,7 @@ export function flushQueue(state, callbacks) {
       try {
         const data = await apiPost(state.config, buildItemPayload(current));
         if (Array.isArray(data.tasks)) lastServerSnapshot = data.tasks;
+        if (data.journal) lastJournalSnapshot = data.journal;
         if (data.sheetUrl && callbacks.onSheetUrl) callbacks.onSheetUrl(data.sheetUrl);
 
         state.pendingQueue.shift();
@@ -154,9 +178,15 @@ export function flushQueue(state, callbacks) {
       }
     }
 
-    if (state.pendingQueue.length === 0 && lastServerSnapshot) {
-      state.tasks = lastServerSnapshot;
-      callbacks.onTasksUpdated();
+    if (state.pendingQueue.length === 0) {
+      if (lastServerSnapshot) {
+        state.tasks = lastServerSnapshot;
+        callbacks.onTasksUpdated();
+      }
+      if (lastJournalSnapshot && callbacks.onJournalUpdated) {
+        callbacks.onJournalUpdated(lastJournalSnapshot);
+        lastJournalSnapshot = null;
+      }
       callbacks.onSyncIndicator('ok', 'Синхронізовано');
     }
     return syncedAny;

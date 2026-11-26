@@ -12,6 +12,7 @@ import {
 import { parseTaskMeta, formatRepeatBadge } from './notes-meta.js';
 import { hasValidConfig } from './api.js';
 import { renderCalendarView, renderDashboardView } from './views.js';
+import { renderDayView, renderFocusBanner } from './day-view.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -277,7 +278,8 @@ export function renderAll(state) {
 
   const filtered = bySphere.filter((t) => matchesSearchAndFilters(t, metaMap.get(t.row), state, nowInfo));
 
-  // Мобільні вкладки статусу потрібні лише в режимі «Дошка»
+  // Мобільні вкладки статусу та панель фільтрів
+  document.querySelector('.controls-row')?.classList.toggle('is-view-hidden', state.activeView === 'day');
   $('statusTabs').classList.toggle('is-view-hidden', state.activeView !== 'board');
   document.querySelectorAll('#statusTabs .status-tab').forEach((tab) => {
     const st = tab.dataset.status;
@@ -288,9 +290,19 @@ export function renderAll(state) {
 
   updatePendingBadge(state.pendingQueue.length);
 
+  const bannerSlot = $('focusBannerSlot');
+  if (bannerSlot) {
+    bannerSlot.hidden = state.activeView !== 'board';
+    if (state.activeView === 'board') bannerSlot.innerHTML = renderFocusBanner(state, nowInfo);
+  }
+
   const board = $('board');
   board.dataset.viewMode = state.activeView;
 
+  if (state.activeView === 'day') {
+    board.innerHTML = renderDayView(state, nowInfo);
+    return;
+  }
   if (state.activeView === 'calendar') {
     board.innerHTML = renderCalendarView(filtered, state, nowInfo);
     return;

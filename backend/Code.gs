@@ -101,7 +101,12 @@ function doPost(e) {
     try {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const sheet = getTasksSheet_(ss);
-      return jsonResponse_({ ok: true, sheetUrl: ss.getUrl(), tasks: readTasks_(sheet) });
+      return jsonResponse_({
+        ok: true,
+        sheetUrl: ss.getUrl(),
+        tasks: readTasks_(sheet),
+        journal: readJournalPayload_(ss)
+      });
     } catch (err) {
       return jsonResponse_({ ok: false, error: err && err.message ? err.message : 'Помилка читання таблиці' });
     }
@@ -153,6 +158,16 @@ function doPost(e) {
       }
       const batch = syncAllPendingToCalendar_(sheet);
       return jsonResponse_({ ok: true, synced: batch.synced, sheetUrl: sheetUrl, tasks: readTasks_(sheet) });
+    }
+
+    if (action === 'saveJournalDay') {
+      const journal = handleSaveJournalDay_(ss, payload);
+      return jsonResponse_({ ok: true, sheetUrl: sheetUrl, journal: journal });
+    }
+
+    if (action === 'saveJournalMeta') {
+      const journal = handleSaveJournalMeta_(ss, payload);
+      return jsonResponse_({ ok: true, sheetUrl: sheetUrl, journal: journal });
     }
 
     return jsonResponse_({ ok: false, error: 'Невідома дія: ' + action });
