@@ -1,12 +1,17 @@
 /**
  * @OnlyCurrentDoc
- * Бекенд Google Apps Script для мобільного менеджера задач (PWA).
+ * Бекенд Google Apps Script для менеджера задач (PWA) — v2.
  * Аркуш: «Задачі» (1-й рядок — заголовки, дані з 2-го рядка, стовпці A–I).
- * Розгортання: Ввести в дію -> Нове введення в дію -> Веб-додаток (Я / Усі).
+ * Безпека: POST-only (без PIN у URL), Script Properties, rate-limit у CacheService,
+ * захист від формул у Sheets, LockService.
  */
 
 const SHEET_NAME = 'Задачі';
-const SECRET_PIN = '1234'; // Замініть на власний секретний PIN перед публікацією
+const FALLBACK_SECRET_PIN = '1234'; // Використовується лише якщо PIN ще не задано в Script Properties
+const PROP_PIN_KEY = 'SECRET_PIN';
+const RATE_LIMIT_KEY = 'AUTH_FAIL_COUNT';
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_SEC = 300; // 5 хвилин
 
 const VALID_SPHERES = ['Крипта', 'Навчання', 'Життя'];
 const VALID_STATUSES = ['Беклог', 'Цей тиждень', 'В роботі', 'Готово'];
@@ -16,7 +21,33 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Календар задач')
     .addItem('Синхронізувати активні задачі з Календарем', 'syncPendingTasksFromSheet')
+    .addSeparator()
+    .addItem('Встановити / змінити секретний PIN', 'promptSetSecretPin')
+    .addItem('Скинути блокування невдалих входів', 'resetRateLimitFromSheet')
     .addToUi();
+}
+
+function promptSetSecretPin() {
+  const ui = SpreadsheetApp.getUi();
+  const res = ui.prompt(
+    'Секретний PIN / пароль',
+    'Введіть новий пароль для PWA (рекомендовано 12–24 символи). Він збережеться у Script Properties і не пропаде при оновленні коду:',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (res.getSelectedButton() !== ui.Button.OK) return;
+  const nextPin = String(res.getResponseText() || '').trim();
+  if (nextPin.length < 4) {
+    ui.alert('Пароль має містити щонайменше 4 символи.');
+    return;
+  }
+  PropertiesService.getScriptProperties().setProperty(PROP_PIN_KEY, nextPin);
+  CacheService.getScriptCache().remove(RATE_LIMIT_KEY);
+  ui.alert('Секретний PIN збережено у Script Properties. Тепер використовуйте його в PWA.');
+}
+
+function resetRateLimitFromSheet() {
+  CacheService.getScriptCache().remove(RATE_LIMIT_KEY);
+  SpreadsheetApp.getUi().alert('Лічильник невдалих спроб входу скинуто.');
 }
 
 function syncPendingTasksFromSheet() {
@@ -36,14 +67,9 @@ function syncPendingTasksFromSheet() {
   }
 }
 
-function doGet(e) {
-  try {
-    const pin = e && e.parameter ? e.parameter.pin : '';
-    if (!isAuthorized_(pin)) return jsonResponse_({ ok: false, error: 'Unauthorized' });
-    return jsonResponse_({ ok: true, tasks: readTasks_(getTasksSheet_()) });
-  } catch (err) {
-    return jsonResponse_({ ok: false, error: err && err.message ? err.message : 'Помилка читання таблиці' });
-  }
+function doGet() {
+  // Навмисно не приймаємо PIN у URL, щоб він не потрапляв в історію браузера та логи
+  return jsonResponse_({ ok: false, error: 'Використовуйте POST-запит для доступу до API' });
 }
 
 function doPost(e) {
@@ -54,8 +80,19 @@ function doPost(e) {
     return jsonResponse_({ ok: false, error: 'Некоректний формат JSON у тілі запиту' });
   }
 
-  if (!isAuthorized_(payload && payload.pin)) {
-    return jsonResponse_({ ok: false, error: 'Unauthorized' });
+  const auth = checkAuthorization_(payload && payload.pin);
+  if (!auth.ok) {
+    return jsonResponse_({ ok: false, error: auth.error });
+  }
+
+  const action = String(payload.action || 'list').trim();
+
+  if (action === 'list') {
+    try {
+      return jsonResponse_({ ok: true, tasks: readTasks_(getTasksSheet_()) });
+    } catch (err) {
+      return jsonResponse_({ ok: false, error: err && err.message ? err.message : 'Помилка читання таблиці' });
+    }
   }
 
   const lock = LockService.getScriptLock();
@@ -67,7 +104,6 @@ function doPost(e) {
 
   try {
     const sheet = getTasksSheet_();
-    const action = String(payload.action || '').trim();
 
     if (action === 'create') {
       const row = handleCreate_(sheet, payload);
@@ -105,8 +141,8 @@ function doPost(e) {
 /* ======================== Обробники операцій ======================== */
 
 function handleCreate_(sheet, payload) {
-  const taskTitle = String(payload.task || '').trim();
-  if (!taskTitle) throw new Error('Назва задачі не може бути порожньою');
+  const rawTitle = String(payload.task || '').trim();
+  if (!rawTitle) throw new Error('Назва задачі не може бути порожньою');
 
   const sphere = sanitizeEnum_(payload.sphere, VALID_SPHERES, 'Життя');
   const priority = sanitizeEnum_(payload.priority, VALID_PRIORITIES, 'Середній');
@@ -118,7 +154,7 @@ function handleCreate_(sheet, payload) {
 
   const deadline = normalizeDateInput_(payload.deadline);
   const time = normalizeTimeInput_(payload.time);
-  const notes = String(payload.notes || '').trim();
+  const rawNotes = String(payload.notes || '').trim();
   const wantCalendar = Boolean(payload.addToCalendar);
 
   if (wantCalendar && !deadline) {
@@ -127,14 +163,22 @@ function handleCreate_(sheet, payload) {
 
   let inCalendar = Boolean(payload.inCalendar);
   if (wantCalendar) {
-    createCalendarEvent_({ sphere: sphere, task: taskTitle, priority: priority, deadline: deadline, time: time, notes: notes });
+    createCalendarEvent_({ sphere: sphere, task: rawTitle, priority: priority, deadline: deadline, time: time, notes: rawNotes });
     inCalendar = true;
   }
 
   const nextRow = Math.max(sheet.getLastRow() + 1, 2);
   sheet.getRange(nextRow, 6, 1, 2).setNumberFormat('@');
   sheet.getRange(nextRow, 1, 1, 9).setValues([[
-    synced.done, sphere, taskTitle, synced.status, priority, deadline, time, notes, inCalendar
+    synced.done,
+    sphere,
+    sanitizeSheetCell_(rawTitle),
+    synced.status,
+    priority,
+    deadline,
+    time,
+    sanitizeSheetCell_(rawNotes),
+    inCalendar
   ]]);
   sheet.getRange(nextRow, 1).insertCheckboxes();
   sheet.getRange(nextRow, 9).insertCheckboxes();
@@ -186,7 +230,15 @@ function handleUpdate_(sheet, payload) {
 
   sheet.getRange(row, 6, 1, 2).setNumberFormat('@');
   range.setValues([[
-    synced.done, nextSphere, nextTask, synced.status, nextPriority, nextDeadline, nextTime, nextNotes, nextInCalendar
+    synced.done,
+    nextSphere,
+    sanitizeSheetCell_(nextTask),
+    synced.status,
+    nextPriority,
+    nextDeadline,
+    nextTime,
+    sanitizeSheetCell_(nextNotes),
+    nextInCalendar
   ]]);
 }
 
@@ -307,7 +359,44 @@ function createCalendarEvent_(item) {
   return event.getId();
 }
 
-/* ======================== Допоміжні функції ======================== */
+/* ======================== Безпека та допоміжні функції ======================== */
+
+function getConfiguredPin_() {
+  const propPin = PropertiesService.getScriptProperties().getProperty(PROP_PIN_KEY);
+  return propPin && String(propPin).trim() ? String(propPin).trim() : String(FALLBACK_SECRET_PIN || '');
+}
+
+function checkAuthorization_(pin) {
+  const cache = CacheService.getScriptCache();
+  const failCount = Number(cache.get(RATE_LIMIT_KEY) || 0);
+  if (failCount >= RATE_LIMIT_MAX) {
+    return { ok: false, error: 'Забагато невдалих спроб входу. Зачекайте 5 хвилин.' };
+  }
+
+  const expected = getConfiguredPin_();
+  const actual = String(pin || '');
+  const match = constantTimeEquals_(actual, expected);
+
+  if (!match) {
+    cache.put(RATE_LIMIT_KEY, String(failCount + 1), RATE_LIMIT_WINDOW_SEC);
+    return { ok: false, error: 'Unauthorized' };
+  }
+  if (failCount > 0) cache.remove(RATE_LIMIT_KEY);
+  return { ok: true };
+}
+
+function constantTimeEquals_(a, b) {
+  if (!b || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function sanitizeSheetCell_(val) {
+  const str = String(val || '');
+  if (!str) return '';
+  return /^[=+\-@\t\r]/.test(str) ? "'" + str : str;
+}
 
 function getTasksSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -393,15 +482,6 @@ function sanitizeEnum_(val, allowed, fallback) {
 
 function toBool_(val) {
   return val === true || String(val).toLowerCase() === 'true';
-}
-
-function isAuthorized_(pin) {
-  const a = String(pin || '');
-  const b = String(SECRET_PIN || '');
-  if (!b || a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
 }
 
 function jsonResponse_(obj) {

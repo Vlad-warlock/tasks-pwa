@@ -1,0 +1,170 @@
+import { STORAGE_QUEUE, loadJson, saveJson, safeApiUrl } from './utils.js';
+
+let mutationChain = Promise.resolve();
+let lastServerSnapshot = null;
+
+export function setLastServerSnapshot(tasks) {
+  lastServerSnapshot = Array.isArray(tasks) ? tasks : null;
+}
+
+export function getLastServerSnapshot() {
+  return lastServerSnapshot;
+}
+
+export function loadPendingQueue() {
+  const list = loadJson(STORAGE_QUEUE, []);
+  return Array.isArray(list) ? list : [];
+}
+
+export function savePendingQueue(queue) {
+  saveJson(STORAGE_QUEUE, queue);
+}
+
+export function hasValidConfig(config) {
+  return Boolean(safeApiUrl(config && config.url) && String((config && config.pin) || '').trim());
+}
+
+export function resolveRowNumber(targetRow, expectedTask, serverTasks) {
+  if (!Array.isArray(serverTasks)) return targetRow;
+  const exact = serverTasks.find((t) => t.row === targetRow && t.task === expectedTask);
+  if (exact) return exact.row;
+  const byName = serverTasks.find((t) => t.task === expectedTask);
+  return byName ? byName.row : targetRow;
+}
+
+export async function apiPost(config, payload) {
+  const endpoint = safeApiUrl(config && config.url);
+  if (!endpoint) throw new Error('Вкажіть коректний URL Google Apps Script (script.google.com)');
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ ...payload, pin: config.pin }),
+    redirect: 'follow',
+    cache: 'no-store'
+  });
+
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data || !data.ok) {
+    const msg = data && data.error === 'Unauthorized'
+      ? 'Невірний PIN-код'
+      : (data && data.error) || 'Не вдалося виконати запит';
+    const err = new Error(msg);
+    if (data && Array.isArray(data.tasks)) err.serverTasks = data.tasks;
+    err.isServerError = true;
+    throw err;
+  }
+  return data;
+}
+
+export async function apiListTasks(config) {
+  const data = await apiPost(config, { action: 'list' });
+  const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+  lastServerSnapshot = tasks;
+  return tasks;
+}
+
+function buildItemPayload(item) {
+  if (item.action === 'create' || (item.action === 'syncCalendar' && item.targetRow == null)) {
+    return { action: item.action, ...item.fields };
+  }
+  return {
+    action: item.action,
+    row: resolveRowNumber(item.targetRow, item.expectedTask, lastServerSnapshot),
+    expectedTask: item.expectedTask,
+    ...item.fields
+  };
+}
+
+export function enqueueOfflineOrSend(state, item, callbacks) {
+  const queueItem = {
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    action: item.action,
+    targetRow: item.targetRow ?? null,
+    expectedTask: item.expectedTask ?? '',
+    fields: item.fields || {},
+    successText: item.successText || ''
+  };
+
+  state.pendingQueue.push(queueItem);
+  savePendingQueue(state.pendingQueue);
+  callbacks.onQueueChange();
+
+  if (!navigator.onLine) {
+    callbacks.onOfflineQueued();
+    return;
+  }
+
+  return flushQueue(state, callbacks);
+}
+
+export function flushQueue(state, callbacks) {
+  if (!hasValidConfig(state.config) || !navigator.onLine || state.pendingQueue.length === 0) {
+    return Promise.resolve(false);
+  }
+
+  mutationChain = mutationChain.catch(() => {}).then(async () => {
+    let syncedAny = false;
+    while (state.pendingQueue.length > 0) {
+      if (!navigator.onLine) {
+        callbacks.onSyncIndicator('error', `Офлайн: у черзі ${state.pendingQueue.length}`);
+        break;
+      }
+
+      const current = state.pendingQueue[0];
+      state.inFlightCount++;
+      callbacks.onSyncIndicator('syncing', 'Синхронізація змін...');
+
+      try {
+        const data = await apiPost(state.config, buildItemPayload(current));
+        if (Array.isArray(data.tasks)) lastServerSnapshot = data.tasks;
+        state.pendingQueue.shift();
+        savePendingQueue(state.pendingQueue);
+        state.lastSyncAt = Date.now();
+        syncedAny = true;
+
+        if (current.successText) {
+          const msg = current.action === 'syncCalendar' && current.targetRow == null && data.synced !== undefined
+            ? `Додано подій у Календар: ${data.synced}`
+            : current.successText;
+          callbacks.onToast(msg, 'success');
+        }
+        callbacks.onQueueChange();
+      } catch (err) {
+        if (!err.isServerError && !navigator.onLine) {
+          callbacks.onSyncIndicator('error', `Офлайн: у черзі ${state.pendingQueue.length}`);
+          break;
+        }
+        // Помилка мережі при формально онлайн-статусі — залишаємо в черзі
+        if (!err.isServerError) {
+          callbacks.onSyncIndicator('error', 'Немає зв’язку. Зміни збережено в черзі');
+          callbacks.onToast('Немає зв’язку з таблицею. Зміни в офлайн-черзі.', 'error');
+          break;
+        }
+        // Помилка валідації або авторизації сервера — знімаємо елемент і відновлюємо актуальний стан
+        state.pendingQueue.shift();
+        savePendingQueue(state.pendingQueue);
+        if (err.serverTasks) {
+          lastServerSnapshot = err.serverTasks;
+          state.tasks = err.serverTasks;
+          callbacks.onTasksUpdated();
+        }
+        callbacks.onSyncIndicator('error', err.message || 'Помилка синхронізації');
+        callbacks.onToast(err.message || 'Помилка синхронізації', 'error');
+        callbacks.onQueueChange();
+      } finally {
+        state.inFlightCount = Math.max(0, state.inFlightCount - 1);
+      }
+    }
+
+    if (state.pendingQueue.length === 0 && lastServerSnapshot) {
+      state.tasks = lastServerSnapshot;
+      callbacks.onTasksUpdated();
+      callbacks.onSyncIndicator('ok', 'Синхронізовано');
+    }
+    return syncedAny;
+  });
+
+  return mutationChain;
+}

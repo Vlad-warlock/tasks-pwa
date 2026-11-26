@@ -1,9 +1,12 @@
-const CACHE_NAME = 'tasks-pwa-v1';
+const CACHE_NAME = 'tasks-pwa-v2';
 const APP_SHELL = [
   './',
   './index.html',
   './styles.css',
-  './app.js',
+  './js/utils.js',
+  './js/api.js',
+  './js/ui.js',
+  './js/app.js',
   './manifest.json',
   './icons/favicon.svg',
   './icons/icon-192.png',
@@ -36,7 +39,6 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  // Запити до Google Apps Script ніколи не перехоплюємо кешем Service Worker
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(
