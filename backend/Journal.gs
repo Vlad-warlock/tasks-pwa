@@ -1,11 +1,16 @@
 /**
  * @OnlyCurrentDoc
  * Модуль щоденного журналу «Щоденник» для Google Apps Script (Tasks PWA v4).
- * Працює в спільному просторі імен із Code.gs та не зачіпає аркуші «Задачі» й «Канбан і Дашборд».
+ * Чистий людиночитабельний аркуш (рядки 2+, без JSON і тех. рядків); конфіг у Script Properties.
  */
 
 const JOURNAL_SHEET_NAME = 'Щоденник';
 const JOURNAL_CONFIG_KEY = '__CONFIG__';
+const PROP_JOURNAL_HABITS = 'JOURNAL_HABITS';
+const PROP_JOURNAL_MONTH_FOCUS = 'JOURNAL_MONTH_FOCUS';
+const JOURNAL_HEADERS = ['Дата', 'Оцінка', 'Фокус дня', 'Звички', 'Що вдалося', 'Що заважало', 'Фокус місяця'];
+const JOURNAL_COL_WIDTHS = [110, 75, 220, 240, 260, 260, 220];
+
 const DEFAULT_JOURNAL_HABITS = [
   { id: 'h1', name: 'Крипта-аналіз', active: true },
   { id: 'h2', name: 'Навчання', active: true },
@@ -20,19 +25,26 @@ function cloneDefaultHabits_() {
   });
 }
 
+function formatJournalSheet_(sheet) {
+  sheet.getRange(1, 1, 1, 7).setValues([JOURNAL_HEADERS]);
+  sheet.setFrozenRows(1);
+  sheet.getRange(1, 1, 1, 7)
+    .setFontWeight('bold')
+    .setBackground('#1f2937')
+    .setFontColor('#edf2f7')
+    .setVerticalAlignment('middle');
+  sheet.getRange(1, 1, 1, 2).setHorizontalAlignment('center');
+  for (let i = 0; i < JOURNAL_COL_WIDTHS.length; i++) {
+    sheet.setColumnWidth(i + 1, JOURNAL_COL_WIDTHS[i]);
+  }
+}
+
 function getOrCreateJournalSheet_(ss) {
   const doc = ss || SpreadsheetApp.getActiveSpreadsheet();
   let sheet = doc.getSheetByName(JOURNAL_SHEET_NAME);
   if (!sheet) {
     sheet = doc.insertSheet(JOURNAL_SHEET_NAME);
-    sheet.getRange(1, 1, 1, 7).setValues([[
-      'Дата', 'Оцінка', 'Фокус дня', 'Звички', 'Що вдалося', 'Що заважало', 'Мета'
-    ]]);
-    sheet.setFrozenRows(1);
-    sheet.getRange(2, 1).setNumberFormat('@');
-    sheet.getRange(2, 1, 1, 7).setValues([[
-      JOURNAL_CONFIG_KEY, '', '', JSON.stringify(cloneDefaultHabits_()), '', '', '{}'
-    ]]);
+    formatJournalSheet_(sheet);
   }
   return sheet;
 }
@@ -66,43 +78,131 @@ function sanitizeMonthFocusMap_(raw) {
   return out;
 }
 
-function findJournalConfigRow_(sheet) {
+function readLegacyConfigFromSheet_(sheet) {
+  if (!sheet || sheet.getLastRow() < 2) return null;
   const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return -1;
-  const colA = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-  for (let i = 0; i < colA.length; i++) {
-    if (String(colA[i][0] || '').trim() === JOURNAL_CONFIG_KEY) return i + 2;
+  const rows = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim() !== JOURNAL_CONFIG_KEY) continue;
+    let habits = null;
+    let monthFocus = null;
+    try { if (rows[i][3]) habits = sanitizeHabitsList_(JSON.parse(String(rows[i][3]))); } catch (_) {}
+    try { if (rows[i][6]) monthFocus = sanitizeMonthFocusMap_(JSON.parse(String(rows[i][6]))); } catch (_) {}
+    return { row: i + 2, habits: habits, monthFocus: monthFocus };
   }
-  return -1;
+  return null;
+}
+
+function loadJournalMeta_(sheetOpt) {
+  const props = PropertiesService.getScriptProperties();
+  const rawHabits = props.getProperty(PROP_JOURNAL_HABITS);
+  const rawFocus = props.getProperty(PROP_JOURNAL_MONTH_FOCUS);
+  let habits = null;
+  let monthFocus = null;
+  try { if (rawHabits) habits = sanitizeHabitsList_(JSON.parse(rawHabits)); } catch (_) {}
+  try { if (rawFocus) monthFocus = sanitizeMonthFocusMap_(JSON.parse(rawFocus)); } catch (_) {}
+
+  if ((!habits || !monthFocus) && sheetOpt) {
+    const legacy = readLegacyConfigFromSheet_(sheetOpt);
+    if (legacy) {
+      if (!habits && legacy.habits) habits = legacy.habits;
+      if (!monthFocus && legacy.monthFocus) monthFocus = legacy.monthFocus;
+    }
+  }
+  return {
+    habits: habits || cloneDefaultHabits_(),
+    monthFocus: monthFocus || {}
+  };
+}
+
+function saveJournalMetaProps_(habits, monthFocus) {
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty(PROP_JOURNAL_HABITS, JSON.stringify(habits));
+  props.setProperty(PROP_JOURNAL_MONTH_FOCUS, JSON.stringify(monthFocus));
+}
+
+function habitTokensToIds_(cellText, habits) {
+  if (!cellText) return [];
+  const byId = {};
+  const byName = {};
+  for (let i = 0; i < habits.length; i++) {
+    byId[habits[i].id.toLowerCase()] = habits[i].id;
+    byName[habits[i].name.toLowerCase()] = habits[i].id;
+  }
+  const parts = String(cellText).split(',');
+  const out = [];
+  const seen = {};
+  for (let i = 0; i < parts.length; i++) {
+    const token = parts[i].trim();
+    if (!token) continue;
+    const low = token.toLowerCase();
+    const id = byName[low] || byId[low] || '';
+    if (id && !seen[id]) {
+      seen[id] = true;
+      out.push(id);
+    }
+  }
+  return out;
+}
+
+function habitIdsToNamesCsv_(ids, habits) {
+  const nameById = {};
+  for (let i = 0; i < habits.length; i++) nameById[habits[i].id] = habits[i].name;
+  const names = [];
+  const seen = {};
+  for (let i = 0; i < ids.length; i++) {
+    const id = String(ids[i] || '').replace(/[^a-zA-Z0-9_-]/g, '').trim();
+    if (!id || seen[id]) continue;
+    seen[id] = true;
+    names.push(nameById[id] || id);
+  }
+  return names.join(', ');
+}
+
+function rewriteSheetReadableRows_(sheet, parseHabits, targetHabits, monthFocus) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+  const tz = Session.getScriptTimeZone();
+  const rows = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    const dateStr = formatDateValue_(rows[i][0], tz);
+    if (!dateStr) continue;
+    const ids = habitTokensToIds_(rows[i][3], parseHabits);
+    const nextCsv = sanitizeSheetCell_(habitIdsToNamesCsv_(ids, targetHabits));
+    const nextMonth = sanitizeSheetCell_(monthFocus[dateStr.slice(0, 7)] || '');
+    if (String(rows[i][3] || '') !== nextCsv) {
+      sheet.getRange(i + 2, 4).setNumberFormat('@').setValue(nextCsv);
+    }
+    if (String(rows[i][6] || '') !== nextMonth) {
+      sheet.getRange(i + 2, 7).setValue(nextMonth);
+    }
+  }
+}
+
+function migrateLegacyJournalIfNeeded_(sheet) {
+  const legacy = readLegacyConfigFromSheet_(sheet);
+  if (!legacy) return;
+  const meta = loadJournalMeta_(sheet);
+  saveJournalMetaProps_(meta.habits, meta.monthFocus);
+  sheet.deleteRow(legacy.row);
+  formatJournalSheet_(sheet);
+  rewriteSheetReadableRows_(sheet, meta.habits, meta.habits, meta.monthFocus);
 }
 
 function readJournalPayload_(ss) {
   const doc = ss || SpreadsheetApp.getActiveSpreadsheet();
   const sheet = doc.getSheetByName(JOURNAL_SHEET_NAME);
+  const meta = loadJournalMeta_(sheet);
   if (!sheet || sheet.getLastRow() < 2) {
-    return { habits: cloneDefaultHabits_(), monthFocus: {}, entries: {} };
+    return { habits: meta.habits, monthFocus: meta.monthFocus, entries: {} };
   }
 
   const tz = Session.getScriptTimeZone();
-  const lastRow = sheet.getLastRow();
-  const rows = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
-  let habits = cloneDefaultHabits_();
-  let monthFocus = {};
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getValues();
   const entries = {};
-
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    const key = String(r[0] || '').trim();
-    if (key === JOURNAL_CONFIG_KEY) {
-      try {
-        if (r[3]) habits = sanitizeHabitsList_(JSON.parse(String(r[3])));
-      } catch (_) {}
-      try {
-        if (r[6]) monthFocus = sanitizeMonthFocusMap_(JSON.parse(String(r[6])));
-      } catch (_) {}
-      continue;
-    }
-
+    if (String(r[0] || '').trim() === JOURNAL_CONFIG_KEY) continue;
     const dateStr = formatDateValue_(r[0], tz);
     if (!dateStr) continue;
     const numRating = Number(r[1]);
@@ -110,22 +210,16 @@ function readJournalPayload_(ss) {
       ? Math.round(numRating)
       : null;
 
-    const doneRaw = String(r[3] || '');
-    const doneHabits = doneRaw
-      ? doneRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean)
-      : [];
-
     entries[dateStr] = {
       date: dateStr,
       rating: rating,
       focus: String(r[2] || ''),
-      doneHabits: doneHabits,
+      doneHabits: habitTokensToIds_(r[3], meta.habits),
       wins: String(r[4] || ''),
       blockers: String(r[5] || '')
     };
   }
-
-  return { habits: habits, monthFocus: monthFocus, entries: entries };
+  return { habits: meta.habits, monthFocus: meta.monthFocus, entries: entries };
 }
 
 function handleSaveJournalDay_(ss, payload) {
@@ -133,80 +227,59 @@ function handleSaveJournalDay_(ss, payload) {
   if (!dateStr) throw new Error('Некоректна дата для щоденника');
 
   const sheet = getOrCreateJournalSheet_(ss);
+  migrateLegacyJournalIfNeeded_(sheet);
+  const meta = loadJournalMeta_(sheet);
   const tz = Session.getScriptTimeZone();
+
   const rawRating = payload.rating;
   const numRating = Number(rawRating);
   const ratingVal = (rawRating !== '' && rawRating !== null && rawRating !== undefined && Number.isFinite(numRating) && numRating >= 1 && numRating <= 10)
     ? Math.round(numRating)
     : '';
 
-  const focusVal = sanitizeSheetCell_(String(payload.focus || '').trim().slice(0, 300));
-  const winsVal = sanitizeSheetCell_(String(payload.wins || '').trim().slice(0, 1500));
-  const blockersVal = sanitizeSheetCell_(String(payload.blockers || '').trim().slice(0, 1500));
-
   const doneArr = Array.isArray(payload.doneHabits) ? payload.doneHabits : [];
-  const cleanDone = [];
-  const seenDone = {};
-  for (let i = 0; i < doneArr.length; i++) {
-    const id = String(doneArr[i] || '').replace(/[^a-zA-Z0-9_-]/g, '').trim();
-    if (id && !seenDone[id]) {
-      seenDone[id] = true;
-      cleanDone.push(id);
-    }
-  }
-  const habitsCell = sanitizeSheetCell_(cleanDone.join(', '));
+  const habitsCell = sanitizeSheetCell_(habitIdsToNamesCsv_(doneArr, meta.habits));
+  const monthFocusVal = sanitizeSheetCell_(meta.monthFocus[dateStr.slice(0, 7)] || '');
 
   const lastRow = sheet.getLastRow();
   let targetRow = -1;
   if (lastRow >= 2) {
     const colA = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
     for (let i = 0; i < colA.length; i++) {
-      if (String(colA[i][0] || '').trim() === JOURNAL_CONFIG_KEY) continue;
-      if (formatDateValue_(colA[i][0], tz) === dateStr) {
-        targetRow = i + 2;
-        break;
-      }
+      if (formatDateValue_(colA[i][0], tz) === dateStr) { targetRow = i + 2; break; }
     }
   }
-  if (targetRow === -1) targetRow = Math.max(lastRow + 1, 3);
+  if (targetRow === -1) targetRow = Math.max(lastRow + 1, 2);
 
   sheet.getRange(targetRow, 1).setNumberFormat('yyyy-mm-dd');
   sheet.getRange(targetRow, 4).setNumberFormat('@');
-  sheet.getRange(targetRow, 1, 1, 6).setValues([[
+  sheet.getRange(targetRow, 1, 1, 7).setValues([[
     toSheetDateOrEmpty_(dateStr),
     ratingVal,
-    focusVal,
+    sanitizeSheetCell_(String(payload.focus || '').trim().slice(0, 300)),
     habitsCell,
-    winsVal,
-    blockersVal
+    sanitizeSheetCell_(String(payload.wins || '').trim().slice(0, 1500)),
+    sanitizeSheetCell_(String(payload.blockers || '').trim().slice(0, 1500)),
+    monthFocusVal
   ]]);
+  sheet.getRange(targetRow, 1, 1, 2).setHorizontalAlignment('center').setVerticalAlignment('top');
+  sheet.getRange(targetRow, 3, 1, 5).setWrap(true).setVerticalAlignment('top');
 
   return readJournalPayload_(ss);
 }
 
 function handleSaveJournalMeta_(ss, payload) {
   const sheet = getOrCreateJournalSheet_(ss);
-  const current = readJournalPayload_(ss);
+  migrateLegacyJournalIfNeeded_(sheet);
+  const prevMeta = loadJournalMeta_(sheet);
   const nextHabits = payload && payload.habits !== undefined
     ? sanitizeHabitsList_(payload.habits)
-    : current.habits;
+    : prevMeta.habits;
   const nextMonthFocus = payload && payload.monthFocus !== undefined
     ? sanitizeMonthFocusMap_(payload.monthFocus)
-    : current.monthFocus;
+    : prevMeta.monthFocus;
 
-  let cfgRow = findJournalConfigRow_(sheet);
-  if (cfgRow === -1) cfgRow = Math.max(sheet.getLastRow() + 1, 2);
-
-  sheet.getRange(cfgRow, 1).setNumberFormat('@');
-  sheet.getRange(cfgRow, 1, 1, 7).setValues([[
-    JOURNAL_CONFIG_KEY,
-    '',
-    '',
-    JSON.stringify(nextHabits),
-    '',
-    '',
-    JSON.stringify(nextMonthFocus)
-  ]]);
-
+  saveJournalMetaProps_(nextHabits, nextMonthFocus);
+  rewriteSheetReadableRows_(sheet, prevMeta.habits, nextHabits, nextMonthFocus);
   return readJournalPayload_(ss);
 }
