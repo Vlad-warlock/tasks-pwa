@@ -398,9 +398,9 @@ progress.tm-progress::-webkit-progress-value { background: var(--amber); border-
   inset: 4px;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(56, 189, 248, 0.34), transparent 70%);
-  transform: scale(calc(0.95 + var(--vb-lvl, 0) * 0.45));
+  transform: scale(calc(0.96 + var(--vb-lvl, 0) * 0.22));
   opacity: calc(0.45 + var(--vb-lvl, 0) * 0.55);
-  transition: transform 0.08s linear, opacity 0.15s ease;
+  will-change: transform, opacity;
   pointer-events: none;
 }
 .voice-bot-svg { position: relative; z-index: 1; transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
@@ -420,18 +420,16 @@ progress.tm-progress::-webkit-progress-value { background: var(--amber); border-
   50% { opacity: 0.45; }
 }
 
-.voice-bot-stage[data-mood="processing"] .voice-bot-svg { animation: botBob 1.3s ease-in-out infinite; }
-.voice-bot-stage[data-mood="processing"] .vb-antenna { fill: var(--amber); }
-.voice-bot-stage[data-mood="processing"] .vb-eye { fill: var(--amber); animation: botThink 0.9s ease-in-out infinite alternate; }
+.voice-bot-stage[data-mood="processing"] .vb-antenna { fill: var(--amber); animation: botCalmPulse 2.2s ease-in-out infinite; }
+.voice-bot-stage[data-mood="processing"] .vb-eye { fill: var(--amber); animation: botCalmPulse 2.2s ease-in-out infinite; }
 .voice-bot-stage[data-mood="processing"] .vb-bar { fill: var(--amber); transform: scaleY(0.35); }
-.voice-bot-stage[data-mood="processing"] .voice-bot-halo { background: radial-gradient(circle, rgba(245, 158, 11, 0.28), transparent 70%); }
-@keyframes botBob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
+.voice-bot-stage[data-mood="processing"] .voice-bot-halo {
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.28), transparent 70%);
+  animation: botCalmPulse 2.2s ease-in-out infinite;
 }
-@keyframes botThink {
-  from { transform: translateX(-2px); }
-  to { transform: translateX(2px); }
+@keyframes botCalmPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.48; }
 }
 
 .voice-bot-stage[data-mood="review"] .vb-antenna,

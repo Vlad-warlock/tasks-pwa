@@ -20,6 +20,7 @@ let analyser = null;
 let sourceNode = null;
 let rafId = 0;
 let smoothLevel = 0;
+const smoothBars = [0.35, 0.5, 0.65, 0.5, 0.35];
 
 export const BOT_STAGE_HTML = `
   <div class="voice-bot-stage" id="voiceBotStage" data-mood="recording">
@@ -110,7 +111,7 @@ export function startVoiceVisualizer(stream) {
       sourceNode = audioCtx.createMediaStreamSource(stream);
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 64;
-      analyser.smoothingTimeConstant = 0.72;
+      analyser.smoothingTimeConstant = 0.85;
       sourceNode.connect(analyser);
       bins = new Uint8Array(analyser.frequencyBinCount);
     } catch (_) {
@@ -125,32 +126,34 @@ export function startVoiceVisualizer(stream) {
       return;
     }
 
-    let target = 0.14 + 0.08 * Math.sin(ts / 220);
-    const barScales = [0.6, 0.85, 1.0, 0.85, 0.6];
+    let target = 0.12 + 0.05 * Math.sin(ts / 450);
+    const wave = (phase) => 0.32 + 0.12 * Math.sin(ts / 340 + phase);
+    const targets = [wave(0.0), wave(0.9), wave(1.8), wave(2.7), wave(3.6)];
 
     if (analyser && bins) {
       analyser.getByteFrequencyData(bins);
       let sum = 0;
       for (let i = 1; i < 16; i++) sum += bins[i] || 0;
       const avg = sum / (15 * 255);
-      target = Math.min(1, Math.max(0.08, avg * 2.6));
-      barScales[0] = Math.min(1, (bins[2] || 0) / 160);
-      barScales[1] = Math.min(1, (bins[4] || 0) / 150);
-      barScales[2] = Math.min(1, (bins[6] || 0) / 140);
-      barScales[3] = Math.min(1, (bins[9] || 0) / 150);
-      barScales[4] = Math.min(1, (bins[12] || 0) / 160);
+      target = Math.min(1, Math.max(0.06, avg * 2.2));
+      const idxMap = [2, 4, 6, 9, 12];
+      for (let k = 0; k < 5; k++) {
+        targets[k] = Math.max(targets[k], Math.min(1, (bins[idxMap[k]] || 0) / 155));
+      }
     }
 
-    smoothLevel += (target - smoothLevel) * 0.28;
-    const wave = (phase) => 0.35 + Math.max(smoothLevel, 0.12) * (0.65 + 0.35 * Math.sin(ts / 140 + phase));
+    smoothLevel += (target - smoothLevel) * 0.14;
+    for (let k = 0; k < 5; k++) {
+      smoothBars[k] += (targets[k] - smoothBars[k]) * 0.16;
+    }
 
     applyLevelVars(curStage, {
       lvl: smoothLevel,
-      b1: Math.max(barScales[0] * 1.15, wave(0.0)),
-      b2: Math.max(barScales[1] * 1.25, wave(1.1)),
-      b3: Math.max(barScales[2] * 1.35, wave(2.2)),
-      b4: Math.max(barScales[3] * 1.25, wave(3.3)),
-      b5: Math.max(barScales[4] * 1.15, wave(4.4))
+      b1: smoothBars[0],
+      b2: smoothBars[1],
+      b3: smoothBars[2],
+      b4: smoothBars[3],
+      b5: smoothBars[4]
     });
 
     rafId = requestAnimationFrame(loop);
