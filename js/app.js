@@ -33,6 +33,7 @@ import {
   renderAll
 } from './ui.js';
 import { initMobileUx } from './mobile-ux.js';
+import { initVoice, startVoiceRecording, closeVoiceModal } from './voice.js';
 import {
   initModals,
   openTaskModal,
@@ -51,6 +52,7 @@ const state = {
   archivedTasks: [],
   pendingQueue: loadPendingQueue(),
   lastSyncAt: null,
+  hasGeminiKey: false,
   isInitialLoading: false,
   activeView: 'board',
   activeSphere: 'Усі',
@@ -81,7 +83,7 @@ let tempRowSeq = -1;
 let draggedRow = null;
 const pendingDeleteTimers = new Map();
 
-const saveCache = () => saveJson(STORAGE_CACHE, { tasks: state.tasks, archivedTasks: state.archivedTasks, lastSyncAt: state.lastSyncAt });
+const saveCache = () => saveJson(STORAGE_CACHE, { tasks: state.tasks, archivedTasks: state.archivedTasks, lastSyncAt: state.lastSyncAt, hasGeminiKey: state.hasGeminiKey });
 const saveJournalCache = () => saveJson(STORAGE_JOURNAL, state.journal);
 const render = () => renderAll(state);
 const findTaskByRow = (row) => state.tasks.find((t) => t.row === Number(row));
@@ -150,8 +152,9 @@ async function refreshFromServer(silent = false) {
   if (state.pendingQueue.length > 0) await flushQueue(state, syncCallbacks);
   setSyncIndicator('syncing', 'Оновлення даних...');
   try {
-    const { tasks: fresh, archived, sheetUrl, journal } = await apiListTasks(state.config);
+    const { tasks: fresh, archived, sheetUrl, hasGeminiKey, journal } = await apiListTasks(state.config);
     if (sheetUrl) updateStoredSheetUrl(sheetUrl);
+    state.hasGeminiKey = Boolean(hasGeminiKey);
     state.isInitialLoading = false;
     if (state.inFlightCount === 0 && state.pendingQueue.length === 0) {
       state.tasks = fresh;
@@ -422,6 +425,7 @@ function bindEvents() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (!$('voiceModal').hidden) return closeVoiceModal();
       if (!$('filterModal').hidden) return closeModal('filterModal');
       if (!$('taskModal').hidden) return closeModal('taskModal', () => resetDeleteConfirm(state));
       if (!$('settingsModal').hidden) return closeModal('settingsModal', () => resetLogoutConfirm(state));
@@ -430,9 +434,10 @@ function bindEvents() {
     }
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (!$('taskModal').hidden || !$('settingsModal').hidden) return;
+    if (!$('taskModal').hidden || !$('settingsModal').hidden || !$('voiceModal').hidden) return;
     if (e.key === '/') { e.preventDefault(); $('fieldSearch').focus(); }
     else if (e.code === 'KeyN') { e.preventDefault(); openTaskModal(appCtx, null); }
+    else if (e.code === 'KeyV') { e.preventDefault(); startVoiceRecording(); }
     else if (e.code === 'KeyR') { e.preventDefault(); refreshFromServer(false); }
   });
 
@@ -449,12 +454,14 @@ function init() {
   initTactile3D(() => state.prefs.fx3d !== false);
   initTimersDock({ onNotify: showToast });
   initModals(appCtx);
+  initVoice(appCtx);
 
   const cached = loadJson(STORAGE_CACHE, null);
   if (cached && Array.isArray(cached.tasks)) {
     state.tasks = cached.tasks.map((t) => ({ ...t, status: normalizeStatus(t.status, t.done ? 'Готово' : 'Sort') }));
     state.archivedTasks = Array.isArray(cached.archivedTasks) ? cached.archivedTasks : [];
     state.lastSyncAt = cached.lastSyncAt || null;
+    state.hasGeminiKey = Boolean(cached.hasGeminiKey);
   }
   if (hasValidConfig(state.config) && state.tasks.length === 0) state.isInitialLoading = true;
 

@@ -20,6 +20,7 @@ import {
 import { audioFx } from './fx.js';
 import { startFocusTimer } from './timers-dock.js';
 import {
+  apiPost,
   setLastServerSnapshot,
   savePendingQueue,
   enqueueOfflineOrSend
@@ -93,12 +94,22 @@ function updateExtraSummaryBadge(state) {
   badge.textContent = parts.join(' · ');
 }
 
+function syncGeminiKeyBadge(state) {
+  const el = $('geminiKeyStatus');
+  if (!el) return;
+  const ok = Boolean(state.hasGeminiKey);
+  el.textContent = ok ? 'Підключено ✓' : 'Не налаштовано';
+  el.classList.toggle('is-ok', ok);
+}
+
 export function openSettingsModal(ctx) {
   const { state } = ctx;
   $('fieldApiUrl').value = state.config.url || '';
   $('fieldPin').value = state.config.pin || '';
   $('fieldSheetUrl').value = state.config.sheetUrl || '';
+  $('fieldGeminiKey').value = '';
   $('fieldSoundEnabled').checked = Boolean(state.prefs.soundEnabled);
+  syncGeminiKeyBadge(state);
   resetLogoutConfirm(state);
   updateLastSyncText(state.lastSyncAt);
   openModal('settingsModal');
@@ -402,6 +413,28 @@ export function initModals(ctx) {
     const show = input.type === 'password';
     input.type = show ? 'text' : 'password';
     e.currentTarget.textContent = show ? 'Сховати' : 'Показати';
+  });
+
+  $('btnSaveGeminiKey')?.addEventListener('click', async () => {
+    if (!ensureConfigured()) return;
+    const key = $('fieldGeminiKey').value.trim();
+    const btn = $('btnSaveGeminiKey');
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      const res = await apiPost(state.config, { action: 'setGeminiKey', geminiApiKey: key });
+      state.hasGeminiKey = Boolean(res.hasGeminiKey);
+      saveCache();
+      syncGeminiKeyBadge(state);
+      $('fieldGeminiKey').value = '';
+      audioFx.playSuccess();
+      showToast(state.hasGeminiKey ? 'Gemini API ключ збережено' : 'Gemini API ключ видалено', 'success');
+    } catch (err) {
+      showToast(err?.message || 'Не вдалося зберегти Gemini ключ', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Зберегти';
+    }
   });
 
   document.querySelectorAll('[data-close]').forEach((btn) => btn.addEventListener('click', () => closeModal(btn.dataset.close, () => resetDeleteConfirm(state))));

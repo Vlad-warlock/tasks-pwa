@@ -61,7 +61,13 @@ export async function apiListTasks(config) {
   const tasks = Array.isArray(data.tasks) ? data.tasks : [];
   const archived = Array.isArray(data.archived) ? data.archived : [];
   lastServerSnapshot = tasks;
-  return { tasks, archived, sheetUrl: data.sheetUrl || '', journal: data.journal || null };
+  return {
+    tasks,
+    archived,
+    sheetUrl: data.sheetUrl || '',
+    hasGeminiKey: Boolean(data.hasGeminiKey),
+    journal: data.journal || null
+  };
 }
 
 function buildItemPayload(item) {

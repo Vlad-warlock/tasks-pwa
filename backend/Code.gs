@@ -30,6 +30,7 @@ function onOpen() {
     .addItem('Архівувати виконані задачі', 'archiveDoneFromSheet')
     .addSeparator()
     .addItem('Встановити / змінити секретний PIN', 'promptSetSecretPin')
+    .addItem('Встановити Gemini API ключ (голос)', 'promptSetGeminiKey')
     .addItem('Скинути блокування невдалих входів', 'resetRateLimitFromSheet')
     .addToUi();
 }
@@ -109,12 +110,31 @@ function doPost(e) {
       return jsonResponse_({
         ok: true,
         sheetUrl: ss.getUrl(),
+        hasGeminiKey: hasGeminiKey_(),
         tasks: readTasks_(sheet),
         archived: readArchivedSummary_(ss),
         journal: readJournalPayload_(ss)
       });
     } catch (err) {
       return jsonResponse_({ ok: false, error: err && err.message ? err.message : 'Помилка читання таблиці' });
+    }
+  }
+
+  if (action === 'voiceParse') {
+    try {
+      const voiceRes = handleVoiceParse_(payload);
+      return jsonResponse_({ ok: true, transcript: voiceRes.transcript, tasks: voiceRes.tasks });
+    } catch (err) {
+      return jsonResponse_({ ok: false, error: err && err.message ? err.message : 'Помилка розпізнавання голосу' });
+    }
+  }
+
+  if (action === 'setGeminiKey') {
+    try {
+      const keyRes = handleSetGeminiKey_(payload);
+      return jsonResponse_({ ok: true, hasGeminiKey: keyRes.hasGeminiKey });
+    } catch (err) {
+      return jsonResponse_({ ok: false, error: err && err.message ? err.message : 'Не вдалося зберегти ключ' });
     }
   }
 
