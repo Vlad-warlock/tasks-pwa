@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tasks-pwa-v6';
+const CACHE_NAME = 'tasks-pwa-v7';
 const APP_SHELL = [
   './',
   './index.html',
@@ -10,6 +10,7 @@ const APP_SHELL = [
   './js/fx.js',
   './js/timers-dock.js',
   './js/api.js',
+  './js/journal-store.js',
   './js/day-view.js',
   './js/views.js',
   './js/ui.js',
