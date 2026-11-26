@@ -219,7 +219,43 @@ function findFirstEmptyRow_(sheet) {
   return maxR + 1;
 }
 
+function ensureStatusValidation_(sheet, rowOpt) {
+  const checkRow = Math.max(2, Number(rowOpt) || 2);
+  const dv = sheet.getRange(checkRow, 4).getDataValidation();
+  if (dv && dv.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) {
+    const allowed = (dv.getCriteriaValues()[0] || []).map(String);
+    const same = allowed.length === VALID_STATUSES.length && VALID_STATUSES.every(function(s, i) { return allowed[i] === s; });
+    if (same) return;
+  }
+
+  const maxRows = Math.max(sheet.getMaxRows(), MIN_TEMPLATE_ROWS);
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    const rangeD = sheet.getRange(2, 4, lastRow - 1, 1);
+    const vals = rangeD.getValues();
+    let changed = false;
+    for (let i = 0; i < vals.length; i++) {
+      const raw = String(vals[i][0] || '').trim();
+      if (LEGACY_STATUS_MAP[raw]) {
+        vals[i][0] = LEGACY_STATUS_MAP[raw];
+        changed = true;
+      }
+    }
+    if (changed) {
+      rangeD.clearDataValidations();
+      rangeD.setValues(vals);
+    }
+  }
+
+  const rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(VALID_STATUSES, true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, 4, maxRows - 1, 1).setDataValidation(rule);
+}
+
 function writeTaskRow_(sheet, row, data) {
+  ensureStatusValidation_(sheet, row);
   const dateCellVal = toSheetDateOrEmpty_(data.deadline);
   sheet.getRange(row, 6).setNumberFormat('yyyy-mm-dd');
   sheet.getRange(row, 7).setNumberFormat('@');
@@ -346,6 +382,7 @@ function ensureTemplateRows_(sheet) {
     sheet.getRange(startNew, 1, addCount, 1).insertCheckboxes();
     sheet.getRange(startNew, 9, addCount, 1).insertCheckboxes();
   }
+  ensureStatusValidation_(sheet, 2);
 }
 
 function archiveCompletedTasks_(sheet) {
