@@ -45,6 +45,7 @@ import {
 
 const $ = (id) => document.getElementById(id);
 const nowInit = new Date();
+const initViewParam = new URLSearchParams(window.location.search).get('view');
 
 const state = {
   config: loadJson(STORAGE_CONFIG, { url: '', pin: '', sheetUrl: '' }),
@@ -56,7 +57,7 @@ const state = {
   hasGeminiKey: false,
   telegram: { hasToken: false, chatId: '', enabled: false },
   isInitialLoading: false,
-  activeView: 'board',
+  activeView: ['day', 'board', 'calendar', 'dashboard'].includes(initViewParam) ? initViewParam : 'board',
   activeSphere: 'Усі',
   activePriority: 'Усі',
   activeTag: '',

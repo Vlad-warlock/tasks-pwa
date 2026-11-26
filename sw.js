@@ -1,11 +1,11 @@
-const CACHE_NAME = 'tasks-pwa-v15';
+const CACHE_NAME = 'tasks-pwa-v16';
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css?v=15',
-  './board-views.css?v=15',
-  './day-view.css?v=15',
-  './mobile.css?v=15',
+  './styles.css?v=16',
+  './board-views.css?v=16',
+  './day-view.css?v=16',
+  './mobile.css?v=16',
   './js/utils.js',
   './js/notes-meta.js',
   './js/fx.js',
@@ -21,7 +21,7 @@ const APP_SHELL = [
   './js/telegram-ui.js',
   './js/ui.js',
   './js/modals.js',
-  './js/app.js?v=15',
+  './js/app.js?v=16',
   './manifest.json',
   './icons/favicon.svg',
   './icons/icon-192.png',

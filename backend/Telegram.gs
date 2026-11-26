@@ -1,8 +1,9 @@
 /**
- * Telegram-сповіщення з Google Apps Script:
- * - Ранковий звіт (08:30): задачі на сьогодні, Фокус та прострочені
- * - Нагадування про дедлайн (кожні 15 хв): за 15–30 хв до часу задачі (без дублів)
- * - Вечірній підсумок (21:00): виконано / залишилось + нагадування про щоденник
+ * Telegram-сповіщення з Google Apps Script (Pilot Cockpit Cards + Mini App):
+ * - Вбудована кнопка меню Telegram («Задачі» web_app) та інлайн-кнопки переходу
+ * - Ранковий брифінг (08:30): KPI-рядок, Фокус дня, прострочені, план і прогрес
+ * - Нагадування про дедлайн (кожні 15 хв): картка за 0–30 хв до часу задачі
+ * - Вечірній підсумок (21:00): прогрес задач, звички/оцінка щоденника та залишок
  */
 
 const PROP_TG_TOKEN = 'TG_BOT_TOKEN';
@@ -10,6 +11,8 @@ const PROP_TG_CHAT_ID = 'TG_CHAT_ID';
 const PROP_TG_ENABLED = 'TG_ENABLED';
 const PWA_PUBLIC_URL = 'https://vlad-warlock.github.io/tasks-pwa/';
 const TG_TRIGGER_HANDLERS = ['tgMorningDigest', 'tgEveningDigest', 'tgCheckDeadlines'];
+const TG_WEEKDAYS = { '1': 'пн', '2': 'вт', '3': 'ср', '4': 'чт', '5': 'пт', '6': 'сб', '7': 'нд' };
+const TG_PRIO_WEIGHT = { 'Високий': 0, 'Середній': 1, 'Низький': 2 };
 
 function getTgConfig_() {
   const props = PropertiesService.getScriptProperties();
@@ -41,19 +44,126 @@ function escapeTgHtml_(str) {
     .replace(/>/g, '&gt;');
 }
 
-function sendTelegramHtml_(token, chatId, htmlText) {
+function tgProgressBar_(done, total) {
+  const safeTotal = total > 0 ? total : 0;
+  const pct = safeTotal > 0 ? Math.min(100, Math.round((done / safeTotal) * 100)) : 0;
+  const filled = Math.round(pct / 10);
+  let bar = '';
+  for (let i = 0; i < 10; i++) bar += i < filled ? '▰' : '▱';
+  return '<code>' + bar + '</code> <b>' + pct + '%</b> (' + done + '/' + safeTotal + ')';
+}
+
+function tgPriorityDot_(prio) {
+  if (prio === 'Високий') return '🔴';
+  if (prio === 'Середній') return '🟡';
+  if (prio === 'Низький') return '🟢';
+  return '▫️';
+}
+
+function tgSphereTag_(sphere) {
+  if (sphere === 'Крипта') return '💎 Крипта';
+  if (sphere === 'Навчання') return '📚 Навчання';
+  if (sphere === 'Життя') return '🌿 Життя';
+  return sphere ? '📌 ' + escapeTgHtml_(sphere) : '';
+}
+
+function formatShortDateDot_(ymd) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? (m[3] + '.' + m[2]) : String(ymd || '');
+}
+
+function formatTodayBadge_(now, tz) {
+  const dateDot = Utilities.formatDate(now, tz, 'dd.MM');
+  const wd = TG_WEEKDAYS[Utilities.formatDate(now, tz, 'u')] || '';
+  return wd ? dateDot + ' (' + wd + ')' : dateDot;
+}
+
+function extractChecklistSummary_(notes) {
+  const lines = String(notes || '').split(/\r?\n/);
+  let total = 0;
+  let done = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (/^-\s*\[[xX]\]\s+/.test(trimmed)) {
+      total++;
+      done++;
+    } else if (/^-\s*\[\s\]\s+/.test(trimmed)) {
+      total++;
+    }
+  }
+  return total > 0 ? ' · ✓ ' + done + '/' + total : '';
+}
+
+function sortTasksForBriefing_(a, b) {
+  const pa = TG_PRIO_WEIGHT[a.priority] !== undefined ? TG_PRIO_WEIGHT[a.priority] : 1;
+  const pb = TG_PRIO_WEIGHT[b.priority] !== undefined ? TG_PRIO_WEIGHT[b.priority] : 1;
+  if (pa !== pb) return pa - pb;
+  if (a.time && b.time) return a.time.localeCompare(b.time);
+  if (a.time) return -1;
+  if (b.time) return 1;
+  return String(a.task || '').localeCompare(String(b.task || ''), 'uk');
+}
+
+function formatRichTaskLine_(t, includeDate) {
+  const dot = tgPriorityDot_(t.priority);
+  const pin = String(t.notes || '').indexOf('[pin]') !== -1 ? '📌 ' : '';
+  const timePart = t.time ? ' <code>' + escapeTgHtml_(t.time) + '</code>' : '';
+  const sphere = tgSphereTag_(t.sphere);
+  const spherePart = sphere ? ' · ' + sphere : '';
+  const datePart = includeDate && t.deadline ? ' · 📅 ' + escapeTgHtml_(formatShortDateDot_(t.deadline)) : '';
+  const chkPart = extractChecklistSummary_(t.notes);
+  return dot + ' ' + pin + '<b>' + escapeTgHtml_(t.task) + '</b>' + timePart + spherePart + datePart + chkPart;
+}
+
+function buildWebAppMarkup_(chatId, rows) {
+  const isGroup = String(chatId || '').indexOf('-') === 0;
+  const inlineKeyboard = rows.map(function(row) {
+    return row.map(function(btn) {
+      const targetUrl = btn.view && btn.view !== 'board'
+        ? PWA_PUBLIC_URL + '?view=' + encodeURIComponent(btn.view)
+        : PWA_PUBLIC_URL;
+      return isGroup
+        ? { text: btn.text, url: targetUrl }
+        : { text: btn.text, web_app: { url: targetUrl } };
+    });
+  });
+  return { inline_keyboard: inlineKeyboard };
+}
+
+function setTelegramMenuButton_(token) {
   const cleanToken = sanitizeTgToken_(token);
-  if (!cleanToken) throw new Error('Некоректний формат токена Telegram-бота');
-  const url = 'https://api.telegram.org/bot' + cleanToken + '/sendMessage';
-  const resp = UrlFetchApp.fetch(url, {
+  if (!cleanToken) return;
+  const url = 'https://api.telegram.org/bot' + cleanToken + '/setChatMenuButton';
+  UrlFetchApp.fetch(url, {
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify({
-      chat_id: String(chatId),
-      text: htmlText,
-      parse_mode: 'HTML',
-      disable_web_page_preview: true
+      menu_button: {
+        type: 'web_app',
+        text: 'Задачі',
+        web_app: { url: PWA_PUBLIC_URL }
+      }
     }),
+    muteHttpExceptions: true
+  });
+}
+
+function sendTelegramHtml_(token, chatId, htmlText, replyMarkupOpt) {
+  const cleanToken = sanitizeTgToken_(token);
+  if (!cleanToken) throw new Error('Некоректний формат токена Telegram-бота');
+  const url = 'https://api.telegram.org/bot' + cleanToken + '/sendMessage';
+  const body = {
+    chat_id: String(chatId),
+    text: htmlText,
+    parse_mode: 'HTML',
+    disable_web_page_preview: true
+  };
+  if (replyMarkupOpt) body.reply_markup = replyMarkupOpt;
+
+  const resp = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(body),
     muteHttpExceptions: true
   });
   const code = resp.getResponseCode();
@@ -102,6 +212,42 @@ function setupTelegramTriggers() {
   ScriptApp.newTrigger('tgCheckDeadlines').timeBased().everyMinutes(15).create();
 }
 
+function readJournalSafe_(ss) {
+  try {
+    return readJournalPayload_(ss);
+  } catch (_) {
+    return { habits: [], entries: {} };
+  }
+}
+
+function buildWelcomeMessage_(ss) {
+  let active = 0;
+  let done = 0;
+  let focus = 0;
+  try {
+    const tasks = readTasks_(getTasksSheet_(ss));
+    for (let i = 0; i < tasks.length; i++) {
+      if (tasks[i].done) done++;
+      else {
+        active++;
+        if (tasks[i].status === 'Фокус') focus++;
+      }
+    }
+  } catch (_) {}
+
+  const lines = [
+    '⚡ <b>Задачі PRO · Cockpit підключено</b>',
+    '',
+    '<blockquote>📡 <b>Розклад автопілота</b>\n08:30 — ранковий брифінг дня\nкожні 15 хв — контроль дедлайнів\n21:00 — вечірній підсумок і звички</blockquote>',
+    '',
+    '📊 <b>Дошка зараз:</b> у Фокусі <b>' + focus + '</b> · активних <b>' + active + '</b>',
+    tgProgressBar_(done, done + active),
+    '',
+    '👇 <i>Відкривай трекер у вікні Telegram через кнопку нижче або меню «Задачі».</i>'
+  ];
+  return lines.join('\n');
+}
+
 function handleSaveTelegramConfig_(payload) {
   const props = PropertiesService.getScriptProperties();
   const prev = getTgConfig_();
@@ -127,15 +273,21 @@ function handleSaveTelegramConfig_(payload) {
     throw new Error('Натисніть /start у своєму боті в Telegram (або напишіть йому «Привіт») і знову тисніть Підключити.');
   }
 
-  const welcomeMsg = '<b>Задачі PRO підключено</b>\nСюди приходитимуть ранковий звіт (08:30), нагадування за 15–30 хв до дедлайну та вечірній підсумок (21:00).\n\n<a href="' + PWA_PUBLIC_URL + '">Відкрити дошку</a>';
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const welcomeMsg = buildWelcomeMessage_(ss);
+  const welcomeMarkup = buildWebAppMarkup_(chatId, [
+    [{ text: '🚀 Відкрити Задачі PRO', view: 'board' }],
+    [{ text: '🎯 Вкладка «День»', view: 'day' }, { text: '📊 Дашборд', view: 'dashboard' }]
+  ]);
+
   try {
-    sendTelegramHtml_(token, chatId, welcomeMsg);
+    sendTelegramHtml_(token, chatId, welcomeMsg, welcomeMarkup);
   } catch (err) {
     if (!rawChat && String(err && err.message || '').indexOf('chat not found') !== -1) {
       const freshChatId = detectTelegramChatId_(token);
       if (freshChatId && freshChatId !== chatId) {
         chatId = freshChatId;
-        sendTelegramHtml_(token, chatId, welcomeMsg);
+        sendTelegramHtml_(token, chatId, welcomeMsg, welcomeMarkup);
       } else {
         throw new Error('Чат не знайдено. Відкрийте саме цього бота в Telegram, натисніть Start і спробуйте ще раз (поле Chat ID лишіть порожнім).');
       }
@@ -143,6 +295,8 @@ function handleSaveTelegramConfig_(payload) {
       throw err;
     }
   }
+
+  try { setTelegramMenuButton_(token); } catch (_) {}
 
   props.setProperty(PROP_TG_TOKEN, token);
   props.setProperty(PROP_TG_CHAT_ID, chatId);
@@ -158,46 +312,71 @@ function handleSaveTelegramConfig_(payload) {
   return Object.assign(getTelegramStatus_(), { triggersReady: triggersReady });
 }
 
-function formatTaskBullet_(t) {
-  const timePart = t.time ? escapeTgHtml_(t.time) + ' · ' : '';
-  const spherePart = t.sphere ? ' [' + escapeTgHtml_(t.sphere) + ']' : '';
-  return '• ' + timePart + escapeTgHtml_(t.task) + spherePart;
-}
-
 function buildMorningMessage_(ss) {
+  const now = new Date();
   const tz = Session.getScriptTimeZone();
-  const today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+  const todayLabel = formatTodayBadge_(now, tz);
   const tasks = readTasks_(getTasksSheet_(ss));
+  const doneCount = tasks.filter(function(t) { return t.done; }).length;
   const active = tasks.filter(function(t) { return !t.done; });
-  const overdue = active.filter(function(t) { return t.deadline && t.deadline < today; });
-  const todayTasks = active.filter(function(t) { return t.deadline === today; });
-  const focusTasks = active.filter(function(t) { return t.status === 'Фокус' && t.deadline !== today && (!t.deadline || t.deadline > today); });
+  const overdue = active.filter(function(t) { return t.deadline && t.deadline < today; }).sort(sortTasksForBriefing_);
+  const todayTasks = active.filter(function(t) { return t.deadline === today; }).sort(sortTasksForBriefing_);
+  const focusTasks = active.filter(function(t) { return t.status === 'Фокус' && t.deadline !== today && (!t.deadline || t.deadline > today); }).sort(sortTasksForBriefing_);
 
-  const lines = ['<b>План на сьогодні · ' + today + '</b>'];
+  const journal = readJournalSafe_(ss);
+  const entry = (journal.entries && journal.entries[today]) || null;
+  const activeHabits = (journal.habits || []).filter(function(h) { return h && h.active !== false; });
+
+  const lines = [
+    '☀️ <b>Ранковий брифінг · ' + todayLabel + '</b>',
+    '',
+    '<blockquote>🔥 Прострочені: <b>' + overdue.length + '</b>  |  📅 Сьогодні: <b>' + todayTasks.length + '</b>  |  ⚡ Фокус: <b>' + focusTasks.length + '</b></blockquote>'
+  ];
+
+  if (entry && entry.focus) {
+    lines.push('\n🎯 <b>Фокус дня</b>\n<blockquote>' + escapeTgHtml_(entry.focus) + '</blockquote>');
+  }
+
   if (overdue.length) {
-    lines.push('\n<b>Прострочені (' + overdue.length + '):</b>');
-    overdue.slice(0, 6).forEach(function(t) { lines.push(formatTaskBullet_(t)); });
+    const overdueList = overdue.slice(0, 5).map(function(t) { return formatRichTaskLine_(t, true); }).join('\n');
+    const extraOver = overdue.length > 5 ? '\n<i>…та ще ' + (overdue.length - 5) + '</i>' : '';
+    lines.push('\n🔥 <b>Потребують уваги (' + overdue.length + ')</b>\n<blockquote>' + overdueList + extraOver + '</blockquote>');
   }
+
   if (todayTasks.length) {
-    lines.push('\n<b>На сьогодні (' + todayTasks.length + '):</b>');
-    todayTasks.slice(0, 8).forEach(function(t) { lines.push(formatTaskBullet_(t)); });
+    const todayList = todayTasks.slice(0, 6).map(function(t) { return formatRichTaskLine_(t, false); }).join('\n');
+    const extraToday = todayTasks.length > 6 ? '\n<i>…та ще ' + (todayTasks.length - 6) + '</i>' : '';
+    lines.push('\n📅 <b>План на сьогодні (' + todayTasks.length + ')</b>\n<blockquote>' + todayList + extraToday + '</blockquote>');
   }
+
   if (focusTasks.length) {
-    lines.push('\n<b>У Фокусі (' + focusTasks.length + '):</b>');
-    focusTasks.slice(0, 5).forEach(function(t) { lines.push(formatTaskBullet_(t)); });
+    const focusList = focusTasks.slice(0, 5).map(function(t) { return formatRichTaskLine_(t, true); }).join('\n');
+    const extraFocus = focusTasks.length > 5 ? '\n<i>…та ще ' + (focusTasks.length - 5) + '</i>' : '';
+    lines.push('\n⚡ <b>У Фокусі (' + focusTasks.length + ')</b>\n<blockquote>' + focusList + extraFocus + '</blockquote>');
   }
+
   if (!overdue.length && !todayTasks.length && !focusTasks.length) {
-    lines.push('\nАктивних справ на сьогодні немає. Гарного дня!');
+    lines.push('\n✨ <b>Чистий горизонт!</b> Термінових задач на сьогодні немає — гарного продуктивного дня.');
   }
-  lines.push('\n<a href="' + PWA_PUBLIC_URL + '">Відкрити Задачі PRO</a>');
+
+  lines.push('\n📊 <b>Прогрес дошки</b>\n' + tgProgressBar_(doneCount, tasks.length));
+  if (activeHabits.length) {
+    const doneHabits = entry && Array.isArray(entry.doneHabits) ? entry.doneHabits.length : 0;
+    lines.push('🌿 <b>Звички сьогодні:</b> ' + doneHabits + '/' + activeHabits.length);
+  }
   return lines.join('\n');
 }
 
 function handleTestTelegram_() {
   const cfg = getTgConfig_();
   if (!cfg.token || !cfg.chatId) throw new Error('Спочатку підключіть Telegram-бота');
+  try { setTelegramMenuButton_(cfg.token); } catch (_) {}
   const msg = buildMorningMessage_(SpreadsheetApp.getActiveSpreadsheet());
-  sendTelegramHtml_(cfg.token, cfg.chatId, msg);
+  const markup = buildWebAppMarkup_(cfg.chatId, [
+    [{ text: '🚀 Відкрити дошку', view: 'board' }, { text: '🎯 План дня', view: 'day' }]
+  ]);
+  sendTelegramHtml_(cfg.token, cfg.chatId, msg, markup);
   return { sent: true };
 }
 
@@ -205,29 +384,53 @@ function tgMorningDigest() {
   const cfg = getTgConfig_();
   if (!cfg.enabled || !cfg.token || !cfg.chatId) return;
   const msg = buildMorningMessage_(SpreadsheetApp.getActiveSpreadsheet());
-  sendTelegramHtml_(cfg.token, cfg.chatId, msg);
+  const markup = buildWebAppMarkup_(cfg.chatId, [
+    [{ text: '🚀 Відкрити дошку', view: 'board' }, { text: '🎯 План дня', view: 'day' }]
+  ]);
+  sendTelegramHtml_(cfg.token, cfg.chatId, msg, markup);
 }
 
 function tgEveningDigest() {
   const cfg = getTgConfig_();
   if (!cfg.enabled || !cfg.token || !cfg.chatId) return;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const now = new Date();
   const tz = Session.getScriptTimeZone();
-  const today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+  const todayLabel = formatTodayBadge_(now, tz);
   const tasks = readTasks_(getTasksSheet_(ss));
   const doneCount = tasks.filter(function(t) { return t.done; }).length;
-  const remaining = tasks.filter(function(t) { return !t.done && (t.deadline === today || t.status === 'Фокус' || (t.deadline && t.deadline < today)); });
+  const remaining = tasks.filter(function(t) {
+    return !t.done && (t.deadline === today || t.status === 'Фокус' || (t.deadline && t.deadline < today));
+  }).sort(sortTasksForBriefing_);
 
-  const lines = ['<b>Вечірній підсумок · ' + today + '</b>'];
-  lines.push('Виконано на дошці: <b>' + doneCount + '</b>');
+  const journal = readJournalSafe_(ss);
+  const entry = (journal.entries && journal.entries[today]) || null;
+  const activeHabits = (journal.habits || []).filter(function(h) { return h && h.active !== false; });
+  const doneHabits = entry && Array.isArray(entry.doneHabits) ? entry.doneHabits.length : 0;
+  const ratingText = entry && entry.rating ? '<b>' + entry.rating + '/10</b>' : '<i>ще не виставлено</i>';
+
+  const lines = [
+    '🌙 <b>Вечірній підсумок · ' + todayLabel + '</b>',
+    '',
+    '📊 <b>Загальний прогрес</b>\n' + tgProgressBar_(doneCount, tasks.length),
+    '',
+    '<blockquote>🌿 <b>Чекін дня:</b> звички <b>' + doneHabits + '/' + activeHabits.length + '</b> · оцінка ' + ratingText + '</blockquote>'
+  ];
+
   if (remaining.length) {
-    lines.push('\n<b>Ще лишилось (' + remaining.length + '):</b>');
-    remaining.slice(0, 6).forEach(function(t) { lines.push(formatTaskBullet_(t)); });
+    const remList = remaining.slice(0, 6).map(function(t) { return formatRichTaskLine_(t, t.deadline !== today); }).join('\n');
+    const extraRem = remaining.length > 6 ? '\n<i>…та ще ' + (remaining.length - 6) + '</i>' : '';
+    lines.push('\n⏳ <b>Ще лишилось закрити (' + remaining.length + ')</b>\n<blockquote>' + remList + extraRem + '</blockquote>');
   } else {
-    lines.push('\nУсі задачі на сьогодні закрито!');
+    lines.push('\n🎉 <b>Усі ключові задачі на сьогодні закрито!</b>');
   }
-  lines.push('\nНе забудь відмітити звички й оцінити день 1–10.\n<a href="' + PWA_PUBLIC_URL + '">Відкрити вкладку «День»</a>');
-  sendTelegramHtml_(cfg.token, cfg.chatId, lines.join('\n'));
+
+  lines.push('\n✍️ <i>Зафіксуй перемоги дня та постав оцінку перед сном.</i>');
+  const markup = buildWebAppMarkup_(cfg.chatId, [
+    [{ text: '🌙 Підсумувати день', view: 'day' }, { text: '🚀 Дошка', view: 'board' }]
+  ]);
+  sendTelegramHtml_(cfg.token, cfg.chatId, lines.join('\n'), markup);
 }
 
 function tgCheckDeadlines() {
@@ -255,14 +458,16 @@ function tgCheckDeadlines() {
     const dedupeKey = 'TG_DL_' + today + '_' + t.time + '_' + t.task.slice(0, 24);
     if (cache.get(dedupeKey)) continue;
     cache.put(dedupeKey, '1', 21600);
-    alerts.push(formatTaskBullet_(t));
+
+    const etaText = diff <= 1 ? 'зараз!' : ('через ' + diff + ' хв');
+    alerts.push(formatRichTaskLine_(t, false) + ' <i>(' + etaText + ')</i>');
   }
 
   if (alerts.length) {
-    sendTelegramHtml_(
-      cfg.token,
-      cfg.chatId,
-      '<b>Скоро дедлайн</b>\n' + alerts.join('\n') + '\n\n<a href="' + PWA_PUBLIC_URL + '">Відкрити дошку</a>'
-    );
+    const msg = '⏰ <b>Скоро дедлайн</b>\n\n<blockquote>' + alerts.join('\n') + '</blockquote>';
+    const markup = buildWebAppMarkup_(cfg.chatId, [
+      [{ text: '⚡ Відкрити дошку', view: 'board' }, { text: '📅 Календар', view: 'calendar' }]
+    ]);
+    sendTelegramHtml_(cfg.token, cfg.chatId, msg, markup);
   }
 }

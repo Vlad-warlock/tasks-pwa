@@ -313,6 +313,11 @@ progress.tm-progress::-webkit-progress-value { background: var(--amber); border-
     min-height: 280px;
     min-width: 0;
   }
+  .board[data-view-mode="board"] .column[data-column="Sort"] { border-top: 2px solid #475569; }
+  .board[data-view-mode="board"] .column[data-column="Short"] { border-top: 2px solid var(--sky); }
+  .board[data-view-mode="board"] .column[data-column="Mid"] { border-top: 2px solid var(--purple); }
+  .board[data-view-mode="board"] .column[data-column="Long"] { border-top: 2px solid var(--amber); }
+  .board[data-view-mode="board"] .column[data-column="Фокус"] { border-top: 2px solid var(--accent); }
   .board[data-view-mode="board"] .column.column-done-drawer {
     grid-column: 1 / -1;
     min-height: auto;
