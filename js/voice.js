@@ -4,6 +4,7 @@ import { apiPost, enqueueOfflineOrSend } from './api.js';
 import { audioFx } from './fx.js';
 import { openModal, closeModal, showToast } from './ui.js';
 import { openSettingsModal } from './modals.js';
+import { BOT_STAGE_HTML, setBotMood, pokeBot, startVoiceVisualizer, stopVoiceVisualizer } from './voice-bot.js';
 
 const $ = (id) => document.getElementById(id);
 const MAX_RECORD_MS = 60000;
@@ -24,16 +25,19 @@ const voice = {
   drafts: []
 };
 
-function setVoiceView(nextMode, titleText) {
+function setVoiceView(nextMode, titleText, botLine = '') {
   voice.mode = nextMode;
   $('voiceModalTitle').textContent = titleText;
   $('voiceRecView').hidden = nextMode !== 'recording';
   $('voiceBusyView').hidden = nextMode !== 'processing';
   $('voiceReviewView').hidden = nextMode !== 'review';
   $('voiceErrorView').hidden = nextMode !== 'error';
+  $('voiceBotMount')?.classList.toggle('is-compact', nextMode === 'review');
+  setBotMood(nextMode, botLine);
 }
 
 function stopMediaTracks() {
+  stopVoiceVisualizer();
   if (voice.timerId) { clearInterval(voice.timerId); voice.timerId = null; }
   if (voice.stream) {
     voice.stream.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
@@ -154,7 +158,10 @@ async function processAudioBlob(blob, durationMs) {
       return showVoiceError(`${hint}Не вдалося виділити задачі. Спробуйте ще раз.`);
     }
 
-    setVoiceView('review', `Знайдено задач: ${voice.drafts.length}`);
+    const reviewLine = voice.drafts.length > 1
+      ? `Готово! Зловив задач: ${voice.drafts.length} — перевір і тисни Додати`
+      : 'Зловив задачу! Перевір і додавай на дошку';
+    setVoiceView('review', `Знайдено задач: ${voice.drafts.length}`, reviewLine);
     renderDrafts();
     audioFx.playSuccess();
   } catch (err) {
@@ -199,9 +206,10 @@ export async function startVoiceRecording() {
 
     voice.startedAt = Date.now();
     $('voiceTimer').textContent = '00:00';
-    setVoiceView('recording', 'Голосовий запис');
+    setVoiceView('recording', 'Голосовий бот');
     openModal('voiceModal');
     voice.recorder.start();
+    startVoiceVisualizer(voice.stream);
     voice.timerId = setInterval(updateTimerDisplay, 250);
     audioFx.playClick();
   } catch (err) {
@@ -281,6 +289,14 @@ function saveVoiceDrafts() {
 
 export function initVoice(ctx) {
   voice.ctx = ctx;
+  const mount = $('voiceBotMount');
+  if (mount) {
+    mount.innerHTML = BOT_STAGE_HTML;
+    $('voiceBotBtn')?.addEventListener('click', () => {
+      audioFx.playClick();
+      pokeBot();
+    });
+  }
 
   $('btnVoice')?.addEventListener('click', startVoiceRecording);
   $('btnVoiceStop')?.addEventListener('click', stopRecording);

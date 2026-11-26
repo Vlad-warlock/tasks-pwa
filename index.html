@@ -15,10 +15,10 @@
   <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg">
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./styles.css?v=11">
-  <link rel="stylesheet" href="./board-views.css?v=11">
-  <link rel="stylesheet" href="./day-view.css?v=11">
-  <link rel="stylesheet" href="./mobile.css?v=11">
+  <link rel="stylesheet" href="./styles.css?v=12">
+  <link rel="stylesheet" href="./board-views.css?v=12">
+  <link rel="stylesheet" href="./day-view.css?v=12">
+  <link rel="stylesheet" href="./mobile.css?v=12">
 </head>
 <body>
   <header class="topbar">
@@ -186,9 +186,14 @@
   </nav>
 
   <div class="fab-group">
-    <button type="button" class="fab fab-voice" id="btnVoice" aria-label="Голосовий запис задачі" title="Надиктувати задачу (V)">
-      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8.5 21h7"/>
+    <button type="button" class="fab fab-voice" id="btnVoice" aria-label="Голосовий бот" title="Покликати бота-асистента (V)">
+      <svg class="fab-bot-svg" viewBox="0 0 28 28" width="24" height="24" fill="none" aria-hidden="true">
+        <line x1="14" y1="5.5" x2="14" y2="2.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <circle class="fab-bot-dot" cx="14" cy="2.3" r="1.4" fill="#38bdf8"/>
+        <rect x="4" y="6" width="20" height="16.5" rx="6" stroke="currentColor" stroke-width="1.8" fill="#121924"/>
+        <rect x="7" y="9.5" width="14" height="9.5" rx="3.2" fill="#0c1018"/>
+        <rect class="fab-bot-eye" x="9.5" y="12.2" width="2.8" height="4" rx="1.4" fill="#38bdf8"/>
+        <rect class="fab-bot-eye" x="15.7" y="12.2" width="2.8" height="4" rx="1.4" fill="#38bdf8"/>
       </svg>
     </button>
     <button type="button" class="fab" id="btnAdd" aria-label="Нова задача" title="Нова задача (N)">
@@ -506,21 +511,18 @@
       </div>
 
       <div class="modal-body voice-modal-body">
+        <div class="voice-bot-mount" id="voiceBotMount"></div>
+
         <div class="voice-state-box" id="voiceRecView">
-          <div class="voice-rec-indicator">
-            <span class="voice-rec-dot" aria-hidden="true"></span>
-            <strong class="voice-timer" id="voiceTimer">00:00</strong>
-          </div>
-          <p class="voice-hint">Надиктуйте одну або кілька задач українською — сфера, дедлайн і кроки підставляться самі.</p>
+          <strong class="voice-timer" id="voiceTimer">00:00</strong>
           <div class="voice-rec-actions">
             <button type="button" class="btn btn-ghost" id="btnVoiceCancel">Скасувати</button>
             <button type="button" class="btn btn-primary" id="btnVoiceStop">Готово</button>
           </div>
         </div>
 
-        <div class="voice-state-box" id="voiceBusyView" hidden>
+        <div class="voice-state-box voice-busy-box" id="voiceBusyView" hidden>
           <span class="voice-spinner" aria-hidden="true"></span>
-          <p class="voice-hint">Розпізнаю голос через Gemini...</p>
         </div>
 
         <div class="voice-review-box" id="voiceReviewView" hidden>
@@ -545,6 +547,6 @@
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
 
-  <script type="module" src="./js/app.js?v=11"></script>
+  <script type="module" src="./js/app.js?v=12"></script>
 </body>
 </html>
