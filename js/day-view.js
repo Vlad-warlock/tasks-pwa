@@ -61,7 +61,7 @@ export function renderFocusBanner(state, nowInfo) {
     </div>`;
 }
 
-function renderHabitMatrix(journal, dateStr, todayStr) {
+function renderHabitMatrix(journal, dateStr, todayStr, isOpen) {
   const [year, month] = dateStr.split('-').map(Number);
   const daysInMonth = new Date(year, month, 0).getDate();
   const ymPrefix = `${year}-${String(month).padStart(2, '0')}`;
@@ -86,21 +86,24 @@ function renderHabitMatrix(journal, dateStr, todayStr) {
   }).join('');
 
   return `
-    <section class="day-card day-matrix-card">
-      <div class="day-card-head">
+    <details class="day-card day-collapsible day-matrix-card" data-day-section="matrix"${isOpen ? ' open' : ''}>
+      <summary class="day-card-head day-collapse-summary">
         <h3 class="day-card-title">Сітка звичок · ${escapeHtml(MONTHS_FULL[month - 1] || '')} ${year}</h3>
-        <span class="day-hint">Число відкриває день · клітинка ставить ✓</span>
-      </div>
+        <span class="day-collapse-right">
+          <span class="day-hint">Число відкриває день · клітинка ставить ✓</span>
+          <span class="day-collapse-chevron" aria-hidden="true">▾</span>
+        </span>
+      </summary>
       <div class="habit-matrix-wrap">
         <table class="habit-matrix">
           <thead><tr><th class="hm-habit-col">Звичка</th>${dayHeaders.join('')}</tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>
-    </section>`;
+    </details>`;
 }
 
-function renderJournalHistory(journal, selectedDate, todayStr) {
+function renderJournalHistory(journal, selectedDate, todayStr, isOpen) {
   const activeCount = Math.max(1, journal.habits.filter((h) => h.active !== false).length);
   const items = Object.values(journal.entries || {})
     .filter((e) => e && (e.focus || e.wins || e.blockers || e.rating !== null || (e.doneHabits && e.doneHabits.length > 0)))
@@ -131,13 +134,16 @@ function renderJournalHistory(journal, selectedDate, todayStr) {
     : '<p class="dash-empty">Записів за інші дні поки немає.</p>';
 
   return `
-    <section class="day-card day-history-card">
-      <div class="day-card-head">
+    <details class="day-card day-collapsible day-history-card" data-day-section="history"${isOpen ? ' open' : ''}>
+      <summary class="day-card-head day-collapse-summary">
         <h3 class="day-card-title">Історія записів <span class="tab-badge">${items.length}</span></h3>
-        <span class="day-hint">Клік відкриває день для перегляду й правки</span>
-      </div>
+        <span class="day-collapse-right">
+          <span class="day-hint">Клік відкриває день для перегляду й правки</span>
+          <span class="day-collapse-chevron" aria-hidden="true">▾</span>
+        </span>
+      </summary>
       <div class="day-history-list">${bodyHtml}</div>
-    </section>`;
+    </details>`;
 }
 
 export function renderDayView(state, nowInfo) {
@@ -190,6 +196,10 @@ export function renderDayView(state, nowInfo) {
     return `<button type="button" class="rating-btn${isActive ? ' is-active' : ''}" data-tone="${ratingTone(n)}" data-action="set-day-rating" data-rating="${n}" aria-pressed="${isActive}">${n}</button>`;
   }).join('');
 
+  const mobile = window.innerWidth <= 720;
+  const openMap = state.mobileDayOpen || {};
+  const isSectionOpen = (key) => !mobile || Boolean(openMap[key]);
+
   return `
     <div class="day-view">
       <div class="day-toolbar">
@@ -205,28 +215,33 @@ export function renderDayView(state, nowInfo) {
         </div>
       </div>
 
-      <section class="day-card day-focus-card">
-        <div class="day-card-head">
-          <h3 class="day-card-title">Головний фокус</h3>
-          <span class="day-hint">2–3 хвилини на день</span>
-        </div>
-        <div class="day-focus-grid">
+      <div class="day-top-focus-grid">
+        <details class="day-card day-collapsible day-month-card" data-day-section="month"${isSectionOpen('month') ? ' open' : ''}>
+          <summary class="day-card-head day-collapse-summary">
+            <h3 class="day-card-title">Фокус місяця (${escapeHtml(monthTitle)})</h3>
+            <span class="day-collapse-right">
+              <span class="day-collapse-chevron" aria-hidden="true">▾</span>
+            </span>
+          </summary>
           <div class="field">
-            <label for="dayMonthFocusInput">Фокус місяця (${escapeHtml(monthTitle)})</label>
             <textarea id="dayMonthFocusInput" rows="3" data-day-field="monthFocus" data-ym="${ymKey}" placeholder="3–5 головних цілей місяця з нового рядка...">${escapeHtml(monthFocusVal)}</textarea>
           </div>
-          <div class="field day-focus-right">
-            <div class="field">
-              <label for="dayFocusInput">Фокус дня</label>
-              <input type="text" id="dayFocusInput" data-day-field="focus" value="${escapeHtml(entry.focus)}" placeholder="Найголовніший результат на сьогодні..." autocomplete="off">
-            </div>
-            <details class="month-review-details"${monthReviewVal ? ' open' : ''}>
-              <summary>Висновки місяця (${escapeHtml(monthTitle)})</summary>
-              <textarea id="dayMonthReviewInput" rows="2" data-day-field="monthReview" data-ym="${ymKey}" placeholder="Підсумки та інсайти за місяць...">${escapeHtml(monthReviewVal)}</textarea>
-            </details>
+          <details class="month-review-details"${monthReviewVal ? ' open' : ''}>
+            <summary>Висновки місяця (${escapeHtml(monthTitle)})</summary>
+            <textarea id="dayMonthReviewInput" rows="2" data-day-field="monthReview" data-ym="${ymKey}" placeholder="Підсумки та інсайти за місяць...">${escapeHtml(monthReviewVal)}</textarea>
+          </details>
+        </details>
+
+        <section class="day-card day-focus-today-card">
+          <div class="day-card-head">
+            <h3 class="day-card-title">Фокус дня</h3>
+            <span class="day-hint">2–3 хвилини на день</span>
           </div>
-        </div>
-      </section>
+          <div class="field">
+            <input type="text" id="dayFocusInput" data-day-field="focus" value="${escapeHtml(entry.focus)}" placeholder="Найголовніший результат на сьогодні..." autocomplete="off">
+          </div>
+        </section>
+      </div>
 
       <div class="day-columns-grid">
         <section class="day-card day-habits-card">
@@ -257,8 +272,8 @@ export function renderDayView(state, nowInfo) {
         </section>
       </div>
 
-      ${renderHabitMatrix(journal, dateStr, nowInfo.date)}
-      ${renderJournalHistory(journal, dateStr, nowInfo.date)}
+      ${renderHabitMatrix(journal, dateStr, nowInfo.date, isSectionOpen('matrix'))}
+      ${renderJournalHistory(journal, dateStr, nowInfo.date, isSectionOpen('history'))}
     </div>`;
 }
 

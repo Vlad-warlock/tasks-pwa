@@ -72,6 +72,27 @@ function syncRepeatModalFields() {
   $('fieldRepeatValLabel').textContent = type === 'monthly' ? 'Число місяця' : 'Інтервал (днів)';
 }
 
+function syncModalPills() {
+  const sp = $('fieldSphere')?.value;
+  document.querySelectorAll('#spherePills [data-val]').forEach((b) => b.classList.toggle('is-active', b.dataset.val === sp));
+  const pr = $('fieldPriority')?.value;
+  document.querySelectorAll('#priorityPills [data-val]').forEach((b) => b.classList.toggle('is-active', b.dataset.val === pr));
+}
+
+function updateExtraSummaryBadge(state) {
+  const badge = $('taskExtraBadge');
+  if (!badge) return;
+  const parts = [];
+  if ($('fieldRepeatType')?.value !== 'none') parts.push('↻');
+  const tagCount = ($('fieldTags')?.value.trim().split(/[\s,]+/).filter(Boolean) || []).length;
+  if (tagCount > 0) parts.push(`${tagCount} тег.`);
+  if (state.modalChecklist.length > 0) {
+    const done = state.modalChecklist.filter((c) => c.done).length;
+    parts.push(`✓ ${done}/${state.modalChecklist.length}`);
+  }
+  badge.textContent = parts.join(' · ');
+}
+
 export function openSettingsModal(ctx) {
   const { state } = ctx;
   $('fieldApiUrl').value = state.config.url || '';
@@ -126,8 +147,18 @@ export function openTaskModal(ctx, task = null, opts = {}) {
   $('btnDeleteTask').hidden = !isEdit;
   $('btnStartTaskTimer').hidden = !isEdit;
 
+  syncModalPills();
+  const extraDetails = $('taskExtraDetails');
+  if (extraDetails) {
+    const hasExtras = meta.repeat.type !== 'none' || meta.tags.length > 0 || state.modalChecklist.length > 0;
+    extraDetails.open = window.innerWidth > 720 || (isEdit && hasExtras);
+  }
+  updateExtraSummaryBadge(state);
+
   openModal('taskModal');
-  setTimeout(() => $(opts.focusDeadline ? 'fieldDeadline' : 'fieldTask').focus(), 40);
+  if (window.innerWidth > 720 || !isEdit || opts.focusDeadline) {
+    setTimeout(() => $(opts.focusDeadline ? 'fieldDeadline' : 'fieldTask').focus(), 40);
+  }
 }
 
 export function initModals(ctx) {
@@ -152,23 +183,42 @@ export function initModals(ctx) {
     state.modalChecklist.push({ done: false, text: txt });
     $('fieldNewCheck').value = '';
     renderModalChecklist(state);
+    updateExtraSummaryBadge(state);
     $('fieldNewCheck').focus();
   };
   $('btnAddCheckItem').addEventListener('click', addModalCheck);
   $('fieldNewCheck').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addModalCheck(); } });
   $('checklistItems').addEventListener('click', (e) => {
     const del = e.target.closest('[data-cl-del]');
-    if (del) { state.modalChecklist.splice(Number(del.dataset.clDel), 1); renderModalChecklist(state); }
+    if (del) { state.modalChecklist.splice(Number(del.dataset.clDel), 1); renderModalChecklist(state); updateExtraSummaryBadge(state); }
   });
   $('checklistItems').addEventListener('change', (e) => {
     const cb = e.target.closest('[data-cl-toggle]');
     if (cb && state.modalChecklist[Number(cb.dataset.clToggle)]) {
       state.modalChecklist[Number(cb.dataset.clToggle)].done = cb.checked;
       renderModalChecklist(state);
+      updateExtraSummaryBadge(state);
     }
   });
 
-  $('fieldRepeatType').addEventListener('change', syncRepeatModalFields);
+  $('spherePills')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-val]');
+    if (!btn) return;
+    $('fieldSphere').value = btn.dataset.val;
+    audioFx.playClick();
+    syncModalPills();
+  });
+  $('priorityPills')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-val]');
+    if (!btn) return;
+    $('fieldPriority').value = btn.dataset.val;
+    audioFx.playClick();
+    syncModalPills();
+  });
+  $('fieldSphere').addEventListener('change', syncModalPills);
+  $('fieldPriority').addEventListener('change', syncModalPills);
+  $('fieldTags').addEventListener('input', () => updateExtraSummaryBadge(state));
+  $('fieldRepeatType').addEventListener('change', () => { syncRepeatModalFields(); updateExtraSummaryBadge(state); });
   $('btnStartTaskTimer').addEventListener('click', () => {
     const title = $('fieldTask').value.trim() || 'Задача';
     closeModal('taskModal', () => resetDeleteConfirm(state));

@@ -2,6 +2,7 @@
 import {
   STATUS_COLUMNS,
   MONTHS_FULL,
+  MONTHS_SHORT,
   escapeHtml,
   isTaskOverdue,
   getDeadlineInfo
@@ -40,12 +41,20 @@ export function renderCalendarView(filteredTasks, state, nowInfo) {
   }
 
   const pad = (n) => String(n).padStart(2, '0');
+  const selectedDate = state.calSelectedDate || nowInfo.date;
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${year}-${pad(month + 1)}-${pad(d)}`;
     const isToday = dateStr === nowInfo.date;
+    const isSelected = dateStr === selectedDate;
     const dayTasks = (byDate.get(dateStr) || []).slice().sort((a, b) => Number(a.done) - Number(b.done));
     const shown = dayTasks.slice(0, 3);
     const restCount = dayTasks.length - shown.length;
+
+    const dotsHtml = dayTasks.slice(0, 4).map((t) => {
+      const overdue = isTaskOverdue(t, nowInfo);
+      const cls = t.done ? ' is-done' : overdue ? ' is-overdue' : '';
+      return `<span class="cal-dot${cls}" data-sphere="${escapeHtml(t.sphere)}"></span>`;
+    }).join('');
 
     const itemsHtml = shown.map((t) => {
       const overdue = isTaskOverdue(t, nowInfo);
@@ -58,17 +67,53 @@ export function renderCalendarView(filteredTasks, state, nowInfo) {
     }).join('');
 
     cells.push(`
-      <div class="cal-cell${isToday ? ' is-today' : ''}" data-cal-date="${dateStr}">
+      <div class="cal-cell${isToday ? ' is-today' : ''}${isSelected ? ' is-selected' : ''}" data-action="cal-select-day" data-date="${dateStr}">
         <div class="cal-cell-head">
           <span class="cal-day-num">${d}</span>
           <button type="button" class="cal-add-day" data-action="add-on-date" data-date="${dateStr}" title="Додати задачу на ${dateStr}">+</button>
         </div>
+        <div class="cal-dots" aria-hidden="true">${dotsHtml}</div>
         <div class="cal-cell-list">
           ${itemsHtml}
           ${restCount > 0 ? `<span class="cal-more">+${restCount} ще</span>` : ''}
         </div>
       </div>`);
   }
+
+  const selParts = selectedDate.split('-').map(Number);
+  const selTitle = selParts.length === 3
+    ? `${selectedDate === nowInfo.date ? 'Сьогодні, ' : ''}${selParts[2]} ${MONTHS_SHORT[(selParts[1] || 1) - 1] || ''}`
+    : selectedDate;
+  const selTasks = (byDate.get(selectedDate) || []).slice().sort((a, b) => Number(a.done) - Number(b.done));
+  const agendaListHtml = selTasks.length
+    ? selTasks.map((t) => {
+      const dl = getDeadlineInfo(t, nowInfo);
+      const cls = [t.done ? ' is-done' : '', dl.overdue ? ' is-overdue' : ''].join('');
+      return `
+        <div class="cal-agenda-item${cls}" data-action="open-task" data-row="${t.row}" data-sphere="${escapeHtml(t.sphere)}">
+          <button type="button" class="task-check" data-action="toggle-done" data-row="${t.row}" aria-label="Перемкнути виконання">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 4.5"/></svg>
+          </button>
+          <div class="cal-agenda-main">
+            <span class="cal-agenda-title">${escapeHtml(t.task)}</span>
+            <div class="cal-agenda-meta">
+              <span class="badge badge-sphere" data-sphere="${escapeHtml(t.sphere)}">${escapeHtml(t.sphere)}</span>
+              ${t.time ? `<span class="badge">${escapeHtml(t.time)}</span>` : ''}
+              ${dl.overdue ? '<span class="badge badge-deadline is-overdue">прострочено</span>' : ''}
+            </div>
+          </div>
+        </div>`;
+    }).join('')
+    : '<p class="dash-empty">На цей день задач немає.</p>';
+
+  const agendaHtml = `
+    <section class="cal-mobile-agenda" aria-label="Задачі обраного дня">
+      <div class="cal-agenda-head">
+        <h3 class="cal-agenda-title-head">${escapeHtml(selTitle)} <span class="tab-badge">${selTasks.length}</span></h3>
+        <button type="button" class="btn btn-primary cal-agenda-add" data-action="add-on-date" data-date="${escapeHtml(selectedDate)}">+ Задача</button>
+      </div>
+      <div class="cal-agenda-list">${agendaListHtml}</div>
+    </section>`;
 
   const unscheduledHtml = unscheduled.length
     ? `
@@ -95,6 +140,7 @@ export function renderCalendarView(filteredTasks, state, nowInfo) {
         ${WEEKDAYS.map((w) => `<div class="cal-wd-head">${w}</div>`).join('')}
       </div>
       <div class="cal-grid">${cells.join('')}</div>
+      ${agendaHtml}
       ${unscheduledHtml}
     </div>`;
 }

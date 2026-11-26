@@ -28,9 +28,11 @@ import {
   updateLastSyncText,
   updatePendingBadge,
   showToast,
+  openModal,
   closeModal,
   renderAll
 } from './ui.js';
+import { initMobileUx } from './mobile-ux.js';
 import {
   initModals,
   openTaskModal,
@@ -58,9 +60,11 @@ const state = {
   showDoneDesktop: false,
   calYear: nowInit.getFullYear(),
   calMonth: nowInit.getMonth(),
+  calSelectedDate: getTodayLocal().date,
   journal: normalizeJournal(loadJson(STORAGE_JOURNAL, null)),
   dayDate: getTodayLocal().date,
   dayEditHabits: false,
+  mobileDayOpen: { month: false, matrix: false, history: false },
   dashRange: '14',
   dashTagScope: 'all',
   quickFilter: 'all',
@@ -351,9 +355,16 @@ function bindEvents() {
       else if (act === 'archive-done') handleArchiveDoneClick(actEl);
       else if (act === 'open-task') openTaskModal(appCtx, findTaskByRow(Number(actEl.dataset.row)));
       else if (act === 'add-on-date') openTaskModal(appCtx, null, { defaultDate: actEl.dataset.date });
-      else if (act === 'cal-prev') { if (--state.calMonth < 0) { state.calMonth = 11; state.calYear--; } render(); }
-      else if (act === 'cal-next') { if (++state.calMonth > 11) { state.calMonth = 0; state.calYear++; } render(); }
-      else if (act === 'cal-today') { const d = new Date(); state.calYear = d.getFullYear(); state.calMonth = d.getMonth(); render(); }
+      else if (act === 'cal-select-day') { state.calSelectedDate = actEl.dataset.date; audioFx.playClick(); render(); }
+      else if (act === 'cal-prev' || act === 'cal-next') {
+        if (act === 'cal-prev') { if (--state.calMonth < 0) { state.calMonth = 11; state.calYear--; } }
+        else { if (++state.calMonth > 11) { state.calMonth = 0; state.calYear++; } }
+        const ym = `${state.calYear}-${String(state.calMonth + 1).padStart(2, '0')}`;
+        const today = getTodayLocal().date;
+        if (!state.calSelectedDate?.startsWith(ym)) state.calSelectedDate = today.startsWith(ym) ? today : `${ym}-01`;
+        render();
+      }
+      else if (act === 'cal-today') { const d = new Date(); state.calYear = d.getFullYear(); state.calMonth = d.getMonth(); state.calSelectedDate = getTodayLocal().date; render(); }
       else if (act === 'jump-sphere') { state.activeSphere = actEl.dataset.sphere; state.activeView = 'board'; audioFx.playClick(); render(); }
       else if (act === 'jump-tag') { state.activeTag = actEl.dataset.tag || ''; state.activeView = 'board'; audioFx.playClick(); render(); }
       else if (act === 'toggle-done-drawer') { state.showDoneDesktop = !state.showDoneDesktop; audioFx.playClick(); render(); }
@@ -405,9 +416,11 @@ function bindEvents() {
   $('btnAdd').addEventListener('click', () => openTaskModal(appCtx, null));
   $('btnRefresh').addEventListener('click', () => refreshFromServer(false));
   $('btnSettings').addEventListener('click', () => openSettingsModal(appCtx));
+  initMobileUx({ state, render, dayCtrl, openModal, closeModal });
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (!$('filterModal').hidden) return closeModal('filterModal');
       if (!$('taskModal').hidden) return closeModal('taskModal', () => resetDeleteConfirm(state));
       if (!$('settingsModal').hidden) return closeModal('settingsModal', () => resetLogoutConfirm(state));
       if (state.searchQuery) { $('fieldSearch').value = ''; state.searchQuery = ''; render(); }
@@ -446,7 +459,16 @@ function init() {
   bindEvents();
   render();
 
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    let swReloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController || swReloading) return;
+      swReloading = true;
+      window.location.reload();
+    });
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => {});
+  }
   if (!hasValidConfig(state.config)) openSettingsModal(appCtx);
   else refreshFromServer(true);
 }

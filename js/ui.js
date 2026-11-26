@@ -14,6 +14,7 @@ import { parseTaskMeta, formatRepeatBadge } from './notes-meta.js';
 import { hasValidConfig } from './api.js';
 import { renderCalendarView, renderDashboardView } from './views.js';
 import { renderDayView, renderFocusBanner } from './day-view.js';
+import { syncMobileChrome } from './mobile-ux.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -225,8 +226,10 @@ export function renderAll(state) {
   const metaMap = new Map();
   for (const t of state.tasks) metaMap.set(t.row, parseTaskMeta(t.notes));
 
+  const sphereCounts = {};
   for (const sp of SPHERES) {
     const count = state.tasks.filter((t) => !t.done && (sp === 'Усі' || t.sphere === sp)).length;
+    sphereCounts[sp] = count;
     const badge = document.querySelector(`[data-sphere-count="${sp}"]`);
     if (badge) badge.textContent = String(count);
   }
@@ -298,6 +301,14 @@ export function renderAll(state) {
     if (state.activeView === 'board') bannerSlot.innerHTML = renderFocusBanner(state, nowInfo);
   }
 
+  syncMobileChrome(state, {
+    activeCount: active.length,
+    todayCount,
+    overdueCount,
+    filteredCount: filtered.length,
+    sphereCounts
+  });
+
   const board = $('board');
   board.dataset.viewMode = state.activeView;
 
@@ -331,6 +342,9 @@ export function renderAll(state) {
 
     const isDoneCol = status === 'Готово';
     const doneDrawerCls = isDoneCol ? ` column-done-drawer${state.showDoneDesktop ? '' : ' is-collapsed'}` : '';
+    const mobileDoneBar = isDoneCol && colTasks.length > 0
+      ? `<div class="mobile-done-bar"><button type="button" class="btn btn-secondary btn-full col-head-btn is-archive" data-action="archive-done">Перенести виконані в Архів (${colTasks.length})</button></div>`
+      : '';
     const headAction = isDoneCol
       ? `<div class="col-done-actions">
           <button type="button" class="col-head-btn" data-action="toggle-done-drawer">${state.showDoneDesktop ? 'Згорнути' : 'Показати'}</button>
@@ -348,6 +362,7 @@ export function renderAll(state) {
           </h2>
           ${headAction}
         </div>
+        ${mobileDoneBar}
         ${cardsHtml}
         ${renderInlineAddComposer(status)}
       </section>`;
