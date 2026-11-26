@@ -42,6 +42,10 @@ function promptSetGeminiKey() {
   ui.alert('Gemini API ключ збережено у Script Properties.');
 }
 
+function authorizeExternalRequests() {
+  UrlFetchApp.fetch('https://generativelanguage.googleapis.com/', { muteHttpExceptions: true });
+}
+
 function handleSetGeminiKey_(payload) {
   const key = String(payload && payload.geminiApiKey || '').trim();
   const props = PropertiesService.getScriptProperties();
