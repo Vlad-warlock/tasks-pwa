@@ -15,10 +15,10 @@
   <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg">
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./styles.css">
-  <link rel="stylesheet" href="./board-views.css">
-  <link rel="stylesheet" href="./day-view.css">
-  <link rel="stylesheet" href="./mobile.css">
+  <link rel="stylesheet" href="./styles.css?v=10">
+  <link rel="stylesheet" href="./board-views.css?v=10">
+  <link rel="stylesheet" href="./day-view.css?v=10">
+  <link rel="stylesheet" href="./mobile.css?v=10">
 </head>
 <body>
   <header class="topbar">
@@ -248,11 +248,6 @@
               <option value="Середній" selected>Середній</option>
               <option value="Низький">Низький</option>
             </select>
-            <div class="mobile-pill-group" id="priorityPills" role="group" aria-label="Пріоритет">
-              <button type="button" class="mobile-pill-btn" data-val="Високий">Високий</button>
-              <button type="button" class="mobile-pill-btn" data-val="Середній">Середній</button>
-              <button type="button" class="mobile-pill-btn" data-val="Низький">Низький</button>
-            </div>
           </div>
         </div>
 
@@ -270,8 +265,8 @@
           <div class="quick-dates" id="quickDates">
             <button type="button" class="quick-date-btn" data-quick-date="0">Сьогодні</button>
             <button type="button" class="quick-date-btn" data-quick-date="1">Завтра</button>
-            <button type="button" class="quick-date-btn" data-quick-date="7">+7 днів</button>
-            <button type="button" class="quick-date-btn is-muted" data-quick-date="clear">Очистити</button>
+            <button type="button" class="quick-date-btn is-extra-quick-date" data-quick-date="7">+7 днів</button>
+            <button type="button" class="quick-date-btn is-muted is-extra-quick-date" data-quick-date="clear">Очистити</button>
           </div>
         </div>
 
@@ -280,9 +275,14 @@
           <textarea id="fieldNotes" rows="2" placeholder="Деталі, реквізити або https://..."></textarea>
         </div>
 
+        <label class="check-row" id="doneToggleWrap">
+          <input type="checkbox" id="fieldDone">
+          <span>Виконано</span>
+        </label>
+
         <details class="task-extra-details" id="taskExtraDetails" open>
           <summary class="task-extra-summary">
-            <span>Додатково (повтор, #теги, чекліст)</span>
+            <span>Додатково (чекліст, теги, повтор)</span>
             <span class="task-extra-meta">
               <span class="task-extra-badge" id="taskExtraBadge"></span>
               <span class="task-extra-chevron" aria-hidden="true">▾</span>
@@ -320,28 +320,24 @@
                 <button type="button" class="btn btn-secondary" id="btnAddCheckItem">Додати</button>
               </div>
             </div>
+
+            <div class="toggles-row">
+              <label class="check-row">
+                <input type="checkbox" id="fieldPinned">
+                <span>Закріпити згори</span>
+              </label>
+              <label class="check-row" id="calendarToggleWrap">
+                <input type="checkbox" id="fieldAddToCalendar">
+                <span id="calendarToggleText">Одразу в Календар</span>
+              </label>
+            </div>
           </div>
         </details>
-
-        <div class="toggles-row">
-          <label class="check-row" id="doneToggleWrap">
-            <input type="checkbox" id="fieldDone">
-            <span>Виконано</span>
-          </label>
-          <label class="check-row">
-            <input type="checkbox" id="fieldPinned">
-            <span>Закріпити згори</span>
-          </label>
-          <label class="check-row" id="calendarToggleWrap">
-            <input type="checkbox" id="fieldAddToCalendar">
-            <span id="calendarToggleText">Одразу в Календар</span>
-          </label>
-        </div>
 
         <div class="modal-actions">
           <button type="button" class="btn btn-danger" id="btnDeleteTask" hidden>Видалити</button>
           <div class="modal-actions-right">
-            <button type="button" class="btn btn-ghost" data-close="taskModal">Скасувати</button>
+            <button type="button" class="btn btn-ghost mobile-hide-cancel" data-close="taskModal">Скасувати</button>
             <button type="submit" class="btn btn-primary" id="btnSaveTask">Зберегти</button>
           </div>
         </div>
@@ -388,6 +384,9 @@
         </label>
 
         <div class="settings-tools">
+          <button type="button" class="btn btn-secondary btn-full mobile-only-flex" id="btnRefreshMobile">
+            Оновити дані з таблиці
+          </button>
           <a class="btn btn-secondary btn-full mobile-only-flex" id="btnOpenSheetMobile" href="#" target="_blank" rel="noopener noreferrer" hidden>
             Відкрити Google Таблицю
           </a>
@@ -450,7 +449,7 @@
           </div>
         </div>
 
-        <div class="filter-section">
+        <div class="filter-section mobile-hide-prio">
           <span class="filter-section-label">Пріоритет</span>
           <div class="filter-pill-grid filter-grid-2" id="mobilePrioPills">
             <button type="button" class="filter-pill is-active" data-m-prio="Усі">Усі</button>
@@ -478,6 +477,6 @@
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
 
-  <script type="module" src="./js/app.js"></script>
+  <script type="module" src="./js/app.js?v=10"></script>
 </body>
 </html>

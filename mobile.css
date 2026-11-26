@@ -58,12 +58,8 @@
   .icon-btn { width: 36px; height: 36px; }
   .pill-btn { height: 36px; }
 
-  #btnTimers:not(.has-running):not(.has-done) {
-    width: 36px;
-    padding: 0;
-    justify-content: center;
-  }
-  #btnTimers:not(.has-running):not(.has-done) #timersBtnLabel { display: none; }
+  #btnRefresh { display: none; }
+  #btnTimers:not(.has-running):not(.has-done) { display: none; }
 
   .mobile-filter-btn { position: relative; }
   .filter-count-dot {
@@ -198,6 +194,7 @@
   .task-card {
     padding: 12px 12px 12px 14px;
     gap: 11px;
+    -webkit-user-drag: none;
   }
   .task-check {
     position: relative;
@@ -217,14 +214,10 @@
     height: 18px;
     opacity: 0.85;
   }
-  .cal-btn { display: none; }
-  .cal-synced {
-    font-size: 0;
-    height: 28px;
-    padding: 0 7px;
-    gap: 0;
-  }
-  .cal-synced svg { width: 13px; height: 13px; }
+  .card-tags-row,
+  .cal-btn,
+  .cal-synced,
+  .inline-add-form { display: none; }
   .status-quick {
     height: 30px;
     padding: 0 9px;
@@ -235,8 +228,6 @@
     margin-bottom: 2px;
   }
   .mobile-done-bar .col-head-btn { min-height: 38px; font-size: 13px; }
-  .inline-add-input { height: 40px; font-size: 16px; }
-  .inline-add-btn { height: 40px; padding: 0 12px; font-size: 13px; }
 
   /* 4. Мобільний Календар: компактні крапки + Agenda обраного дня */
   .cal-toolbar { gap: 6px; }
@@ -328,7 +319,7 @@
   .day-toolbar { flex-wrap: nowrap; gap: 6px; }
   .day-nav-group { flex: 1; min-width: 0; flex-wrap: nowrap; gap: 5px; }
   .day-date-title { min-width: 0; flex: 1; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .day-date-picker { width: 38px; padding: 0 6px; flex-shrink: 0; }
+  .day-date-picker,
   .day-save-hint { display: none; }
 
   .day-top-focus-grid { display: contents; }
@@ -366,26 +357,37 @@
   .modal-sheet {
     display: flex;
     flex-direction: column;
-    max-height: calc(100dvh - var(--safe-top) - 16px);
+    max-height: 90dvh;
     padding: 14px 14px 0;
     overflow: hidden;
   }
   .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
-    padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 8px;
   }
+  .modal-body > * { flex-shrink: 0; }
   .modal-actions {
     position: sticky;
     bottom: 0;
     z-index: 5;
     background: var(--bg-panel);
     padding: 10px 0 calc(var(--safe-bottom) + 12px);
-    margin-top: 4px;
+    margin-top: auto;
   }
   .modal-actions .btn { min-height: 40px; }
 
-  #fieldSphere,
-  #fieldPriority { display: none; }
+  #btnStartTaskTimer,
+  .is-extra-quick-date,
+  .mobile-hide-cancel,
+  .mobile-hide-prio,
+  #fieldSphere { display: none !important; }
+
+  #taskModal .field-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #taskModal .field-grid-3 > .field:first-child { grid-column: 1 / -1; }
+
   .mobile-pill-group {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));

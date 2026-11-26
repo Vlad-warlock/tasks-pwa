@@ -1,11 +1,11 @@
-const CACHE_NAME = 'tasks-pwa-v9';
+const CACHE_NAME = 'tasks-pwa-v10';
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css',
-  './board-views.css',
-  './day-view.css',
-  './mobile.css',
+  './styles.css?v=10',
+  './board-views.css?v=10',
+  './day-view.css?v=10',
+  './mobile.css?v=10',
   './js/utils.js',
   './js/notes-meta.js',
   './js/fx.js',
@@ -18,7 +18,7 @@ const APP_SHELL = [
   './js/mobile-ux.js',
   './js/ui.js',
   './js/modals.js',
-  './js/app.js',
+  './js/app.js?v=10',
   './manifest.json',
   './icons/favicon.svg',
   './icons/icon-192.png',
@@ -53,18 +53,26 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // Network-first для HTML-навігації, щоб оновлення версій застосовувались з першого разу
-  if (req.mode === 'navigate' || url.pathname.endsWith('/index.html') || url.pathname.endsWith('/')) {
+  const isCodeAsset =
+    req.mode === 'navigate' ||
+    url.pathname === '/' ||
+    url.pathname.endsWith('/') ||
+    /\.(html|css|js)$/i.test(url.pathname);
+
+  // Network-first для HTML, CSS та JS, щоб код і стилі завжди оновлювалися синхронно
+  if (isCodeAsset) {
     event.respondWith(
       fetch(req)
         .then((res) => {
-          if (res && res.status === 200) {
+          if (res && res.status === 200 && res.type === 'basic') {
             const copy = res.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
           }
           return res;
         })
-        .catch(() => caches.match(req).then((c) => c || caches.match('./index.html')))
+        .catch(() =>
+          caches.match(req).then((c) => c || (req.mode === 'navigate' ? caches.match('./index.html') : undefined))
+        )
     );
     return;
   }

@@ -415,6 +415,8 @@ function bindEvents() {
 
   $('btnAdd').addEventListener('click', () => openTaskModal(appCtx, null));
   $('btnRefresh').addEventListener('click', () => refreshFromServer(false));
+  $('btnRefreshMobile')?.addEventListener('click', () => { closeModal('settingsModal', () => resetLogoutConfirm(state)); refreshFromServer(false); });
+  document.querySelector('.brand')?.addEventListener('click', () => { if (window.innerWidth <= 720) refreshFromServer(false); });
   $('btnSettings').addEventListener('click', () => openSettingsModal(appCtx));
   initMobileUx({ state, render, dayCtrl, openModal, closeModal });
 
@@ -467,7 +469,7 @@ function init() {
       swReloading = true;
       window.location.reload();
     });
-    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => {});
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => reg.update()).catch(() => {});
   }
   if (!hasValidConfig(state.config)) openSettingsModal(appCtx);
   else refreshFromServer(true);

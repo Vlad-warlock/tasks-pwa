@@ -41,9 +41,6 @@ function syncFilterSheet(state, stats) {
   document.querySelectorAll('#mobileSpherePills [data-m-sphere]').forEach((btn) => {
     btn.classList.toggle('is-active', btn.dataset.mSphere === state.activeSphere);
   });
-  document.querySelectorAll('#mobilePrioPills [data-m-prio]').forEach((btn) => {
-    btn.classList.toggle('is-active', btn.dataset.mPrio === state.activePriority);
-  });
 
   const tagRow = $('mobileTagFilterRow');
   if (tagRow) {
@@ -52,7 +49,7 @@ function syncFilterSheet(state, stats) {
   }
 
   const applyBtn = $('btnMobileApplyFilters');
-  if (applyBtn) applyBtn.textContent = `Показати (${stats.filteredCount})`;
+  if (applyBtn) applyBtn.textContent = `Готово (${stats.filteredCount})`;
 }
 
 export function syncMobileChrome(state, stats) {
@@ -173,16 +170,6 @@ export function initMobileUx({ state, render, dayCtrl, openModal, closeModal }) 
     if (!btn) return;
     audioFx.playClick();
     state.activeSphere = btn.dataset.mSphere;
-    render();
-  });
-
-  $('mobilePrioPills')?.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-m-prio]');
-    if (!btn) return;
-    audioFx.playClick();
-    state.activePriority = btn.dataset.mPrio;
-    const sel = $('filterPriority');
-    if (sel) sel.value = state.activePriority;
     render();
   });
 

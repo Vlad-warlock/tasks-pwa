@@ -75,8 +75,6 @@ function syncRepeatModalFields() {
 function syncModalPills() {
   const sp = $('fieldSphere')?.value;
   document.querySelectorAll('#spherePills [data-val]').forEach((b) => b.classList.toggle('is-active', b.dataset.val === sp));
-  const pr = $('fieldPriority')?.value;
-  document.querySelectorAll('#priorityPills [data-val]').forEach((b) => b.classList.toggle('is-active', b.dataset.val === pr));
 }
 
 function updateExtraSummaryBadge(state) {
@@ -90,6 +88,8 @@ function updateExtraSummaryBadge(state) {
     const done = state.modalChecklist.filter((c) => c.done).length;
     parts.push(`✓ ${done}/${state.modalChecklist.length}`);
   }
+  if ($('fieldPinned')?.checked) parts.push('📌');
+  if ($('fieldAddToCalendar')?.checked) parts.push('📅');
   badge.textContent = parts.join(' · ');
 }
 
@@ -149,10 +149,7 @@ export function openTaskModal(ctx, task = null, opts = {}) {
 
   syncModalPills();
   const extraDetails = $('taskExtraDetails');
-  if (extraDetails) {
-    const hasExtras = meta.repeat.type !== 'none' || meta.tags.length > 0 || state.modalChecklist.length > 0;
-    extraDetails.open = window.innerWidth > 720 || (isEdit && hasExtras);
-  }
+  if (extraDetails) extraDetails.open = window.innerWidth > 720;
   updateExtraSummaryBadge(state);
 
   openModal('taskModal');
@@ -208,16 +205,10 @@ export function initModals(ctx) {
     audioFx.playClick();
     syncModalPills();
   });
-  $('priorityPills')?.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-val]');
-    if (!btn) return;
-    $('fieldPriority').value = btn.dataset.val;
-    audioFx.playClick();
-    syncModalPills();
-  });
   $('fieldSphere').addEventListener('change', syncModalPills);
-  $('fieldPriority').addEventListener('change', syncModalPills);
   $('fieldTags').addEventListener('input', () => updateExtraSummaryBadge(state));
+  $('fieldPinned').addEventListener('change', () => updateExtraSummaryBadge(state));
+  $('fieldAddToCalendar').addEventListener('change', () => updateExtraSummaryBadge(state));
   $('fieldRepeatType').addEventListener('change', () => { syncRepeatModalFields(); updateExtraSummaryBadge(state); });
   $('btnStartTaskTimer').addEventListener('click', () => {
     const title = $('fieldTask').value.trim() || 'Задача';

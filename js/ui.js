@@ -190,8 +190,9 @@ function renderTaskCard(task, meta, nowInfo) {
     meta.pinned && !task.done ? ' is-pinned' : ''
   ].join('');
 
+  const dragAttr = window.innerWidth > 720 ? ' draggable="true"' : '';
   return `
-    <article class="task-card${cardStateCls}" draggable="true" data-row="${task.row}" data-priority="${escapeHtml(task.priority)}">
+    <article class="task-card${cardStateCls}"${dragAttr} data-row="${task.row}" data-priority="${escapeHtml(task.priority)}">
       <button type="button" class="task-check" data-action="toggle-done" data-row="${task.row}" aria-label="Перемкнути виконання">
         <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 4.5"/></svg>
       </button>
