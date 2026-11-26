@@ -4,7 +4,7 @@
  */
 
 const PROP_GEMINI_KEY = 'GEMINI_API_KEY';
-const GEMINI_MODEL = 'gemini-4-hydrogen';
+const GEMINI_VOICE_MODELS = ['gemini-3.5-flash-lite', 'gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
 const GEMINI_INTERACTIONS_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 const GEMINI_API_REVISION = '2026-05-20';
 const MAX_VOICE_BASE64_LEN = 6 * 1024 * 1024;
@@ -160,8 +160,7 @@ function handleVoiceParse_(payload) {
     required: ['transcript', 'tasks']
   };
 
-  const reqBody = {
-    model: GEMINI_MODEL,
+  const baseReq = {
     store: false,
     input: [
       { type: 'text', text: buildVoicePrompt_(todayDate, defaultStatus) },
@@ -174,30 +173,42 @@ function handleVoiceParse_(payload) {
     }
   };
 
-  const resp = UrlFetchApp.fetch(GEMINI_INTERACTIONS_URL, {
-    method: 'post',
-    contentType: 'application/json',
-    headers: {
-      'x-goog-api-key': apiKey,
-      'Api-Revision': GEMINI_API_REVISION
-    },
-    payload: JSON.stringify(reqBody),
-    muteHttpExceptions: true
-  });
+  let parsedResp = null;
+  let lastErr = '';
+  for (let mIdx = 0; mIdx < GEMINI_VOICE_MODELS.length; mIdx++) {
+    const modelName = GEMINI_VOICE_MODELS[mIdx];
+    const reqBody = Object.assign({ model: modelName }, baseReq);
+    const resp = UrlFetchApp.fetch(GEMINI_INTERACTIONS_URL, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {
+        'x-goog-api-key': apiKey,
+        'Api-Revision': GEMINI_API_REVISION
+      },
+      payload: JSON.stringify(reqBody),
+      muteHttpExceptions: true
+    });
 
-  const code = resp.getResponseCode();
-  const textBody = resp.getContentText();
-  let parsedResp;
-  try {
-    parsedResp = JSON.parse(textBody);
-  } catch (_) {
-    throw new Error('Помилка відповіді Gemini (' + code + ')');
+    const code = resp.getResponseCode();
+    let cand = null;
+    try {
+      cand = JSON.parse(resp.getContentText());
+    } catch (_) {
+      cand = null;
+    }
+
+    if (code >= 200 && code < 300 && cand) {
+      parsedResp = cand;
+      break;
+    }
+
+    const errMsg = (cand && cand.error && cand.error.message) || ('HTTP ' + code);
+    lastErr = errMsg;
+    const isTransient = code === 429 || code >= 500 || /high demand|overloaded|unavailable/i.test(errMsg);
+    if (!isTransient) throw new Error('Gemini: ' + errMsg);
   }
 
-  if (code < 200 || code >= 300) {
-    const errMsg = (parsedResp && parsedResp.error && parsedResp.error.message) || ('HTTP ' + code);
-    throw new Error('Gemini: ' + errMsg);
-  }
+  if (!parsedResp) throw new Error('Gemini: ' + (lastErr || 'Моделі тимчасово перевантажені'));
 
   const jsonText = extractInteractionText_(parsedResp);
   if (!jsonText) throw new Error('Gemini не повернув розшифровку');
