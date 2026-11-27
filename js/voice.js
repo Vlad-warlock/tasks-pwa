@@ -1,9 +1,9 @@
-import { STATUS_COLUMNS, SPHERES, PRIORITIES, escapeHtml, getTodayLocal } from './utils.js';
-import { serializeTaskMeta, extractTags } from './notes-meta.js';
-import { apiPost, enqueueOfflineOrSend } from './api.js';
+import { getTodayLocal } from './utils.js';
+import { apiPost } from './api.js';
 import { audioFx } from './fx.js';
 import { openModal, closeModal, showToast } from './ui.js';
 import { openSettingsModal } from './modals.js';
+import { buildAiContextPayload, renderAiActionCards, applyAiActions } from './ai-actions.js';
 import { BOT_STAGE_HTML, setBotMood, pokeBot, startVoiceVisualizer, stopVoiceVisualizer } from './voice-bot.js';
 
 const $ = (id) => document.getElementById(id);
@@ -22,12 +22,15 @@ const voice = {
   timerId: null,
   canceled: false,
   transcript: '',
-  drafts: []
+  reply: '',
+  actions: []
 };
 
 function setVoiceView(nextMode, titleText, botLine = '') {
   voice.mode = nextMode;
   $('voiceModalTitle').textContent = titleText;
+  const composeView = $('voiceComposeView');
+  if (composeView) composeView.hidden = nextMode !== 'compose';
   $('voiceRecView').hidden = nextMode !== 'recording';
   $('voiceBusyView').hidden = nextMode !== 'processing';
   $('voiceReviewView').hidden = nextMode !== 'review';
@@ -75,101 +78,90 @@ function blobToBase64(blob) {
 }
 
 function showVoiceError(msg, showSettingsBtn = false) {
-  setVoiceView('error', 'Голосовий запис');
+  setVoiceView('error', 'ШІ-асистент');
   $('voiceErrorText').textContent = msg;
   $('btnVoiceOpenSettings').hidden = !showSettingsBtn;
   openModal('voiceModal');
 }
 
-function renderDrafts() {
+function renderActionPreview() {
   const trEl = $('voiceTranscript');
   if (trEl) {
     trEl.hidden = !voice.transcript;
     trEl.textContent = voice.transcript ? `«${voice.transcript}»` : '';
   }
 
-  const activeStatuses = STATUS_COLUMNS.filter((s) => s !== 'Готово');
-  const sphereList = SPHERES.filter((s) => s !== 'Усі');
-  const prioList = PRIORITIES.filter((p) => p !== 'Усі');
+  const listEl = $('voiceDraftList');
+  if (listEl) listEl.innerHTML = renderAiActionCards(voice.actions, voice.ctx.state);
 
-  $('voiceDraftList').innerHTML = voice.drafts.map((d, idx) => {
-    const sphereOpts = sphereList.map((s) => `<option value="${escapeHtml(s)}"${s === d.sphere ? ' selected' : ''}>${escapeHtml(s)}</option>`).join('');
-    const statusOpts = activeStatuses.map((s) => `<option value="${escapeHtml(s)}"${s === d.status ? ' selected' : ''}>${escapeHtml(s)}</option>`).join('');
-    const prioOpts = prioList.map((p) => `<option value="${escapeHtml(p)}"${p === d.priority ? ' selected' : ''}>${escapeHtml(p)}</option>`).join('');
-    const metaBadges = [
-      d.deadline ? `<span class="badge badge-deadline">${escapeHtml(d.deadline)}${d.time ? `, ${escapeHtml(d.time)}` : ''}</span>` : '',
-      d.checklist.length ? `<span class="badge">✓ ${d.checklist.length} крок.</span>` : ''
-    ].filter(Boolean).join('');
+  const saveBtn = $('btnVoiceSave');
+  if (saveBtn) {
+    saveBtn.hidden = voice.actions.length === 0;
+    saveBtn.textContent = voice.actions.length > 1 ? `Застосувати (${voice.actions.length})` : 'Застосувати';
+  }
+}
 
-    return `
-      <div class="voice-draft-card" data-vd-idx="${idx}">
-        <div class="vd-head">
-          <input type="text" class="vd-title-input" data-vd-title="${idx}" value="${escapeHtml(d.task)}" aria-label="Назва задачі">
-          <button type="button" class="cl-remove-btn" data-vd-del="${idx}" aria-label="Прибрати задачу">&times;</button>
-        </div>
-        <div class="vd-selects">
-          <select data-vd-sphere="${idx}" aria-label="Сфера">${sphereOpts}</select>
-          <select data-vd-status="${idx}" aria-label="Статус">${statusOpts}</select>
-          <select data-vd-prio="${idx}" aria-label="Пріоритет">${prioOpts}</select>
-        </div>
-        ${metaBadges ? `<div class="vd-meta">${metaBadges}</div>` : ''}
-        ${d.notes ? `<p class="vd-notes">${escapeHtml(d.notes)}</p>` : ''}
-      </div>`;
-  }).join('');
+async function sendAiCommand({ text = '', audioBase64 = '', mimeType = '' }) {
+  const { state } = voice.ctx;
+  setVoiceView('processing', 'Аналізую команду');
+  try {
+    const defStatus = state.activeStatus === 'Готово' ? 'Фокус' : state.activeStatus;
+    const res = await apiPost(state.config, {
+      action: 'aiCommand',
+      text,
+      audioBase64,
+      mimeType,
+      todayDate: getTodayLocal().date,
+      defaultStatus: defStatus,
+      context: buildAiContextPayload(state)
+    });
 
-  $('btnVoiceSave').textContent = voice.drafts.length > 1 ? `Додати (${voice.drafts.length})` : 'Додати на дошку';
+    voice.transcript = String(res.transcript || '').trim();
+    voice.reply = String(res.reply || '').trim();
+    voice.actions = Array.isArray(res.actions) ? res.actions : [];
+
+    const title = voice.actions.length ? `План змін (${voice.actions.length})` : 'Відповідь ШІ';
+    const bubbleLine = voice.reply || (voice.actions.length ? 'План готовий! Перевір перед застосуванням' : 'Готово.');
+    setVoiceView('review', title, bubbleLine);
+    renderActionPreview();
+    audioFx.playSuccess();
+  } catch (err) {
+    const msg = err?.message || 'Не вдалося обробити команду';
+    showVoiceError(msg, msg.includes('Gemini API ключ'));
+    audioFx.playAlert();
+  }
 }
 
 async function processAudioBlob(blob, durationMs) {
   if (durationMs < 400 || !blob || blob.size === 0) {
-    return showVoiceError('Запис занадто короткий. Натисніть мікрофон і продиктуйте задачу.');
+    return showVoiceError('Запис занадто короткий. Натисніть «Говорити» і продиктуйте команду.');
   }
   if (blob.size > MAX_AUDIO_BYTES) {
     return showVoiceError('Запис завеликий. Спробуйте записати коротше (до 1 хвилини).');
   }
+  const audioBase64 = await blobToBase64(blob);
+  const mimeType = blob.type || voice.activeMime || 'audio/mp4';
+  await sendAiCommand({ audioBase64, mimeType });
+}
 
-  setVoiceView('processing', 'Обробка голосу');
-  try {
-    const audioBase64 = await blobToBase64(blob);
-    const { state } = voice.ctx;
-    const defStatus = state.activeStatus === 'Готово' ? 'Фокус' : state.activeStatus;
-    const res = await apiPost(state.config, {
-      action: 'voiceParse',
-      audioBase64,
-      mimeType: blob.type || voice.activeMime || 'audio/mp4',
-      todayDate: getTodayLocal().date,
-      defaultStatus: defStatus
-    });
+export function openAiAssistant() {
+  const { state, ensureConfigured } = voice.ctx;
+  if (!ensureConfigured()) return;
 
-    voice.transcript = String(res.transcript || '').trim();
-    voice.drafts = (Array.isArray(res.tasks) ? res.tasks : []).map((t) => ({
-      task: String(t.task || '').trim(),
-      sphere: t.sphere || 'Життя',
-      status: t.status || defStatus,
-      priority: t.priority || 'Середній',
-      deadline: t.deadline || '',
-      time: t.time || '',
-      notes: String(t.notes || '').trim(),
-      checklist: Array.isArray(t.checklist) ? t.checklist : []
-    })).filter((d) => d.task);
-
-    if (voice.drafts.length === 0) {
-      const hint = voice.transcript ? `Розшифровка: «${voice.transcript}». ` : '';
-      return showVoiceError(`${hint}Не вдалося виділити задачі. Спробуйте ще раз.`);
-    }
-
-    const reviewLine = voice.drafts.length > 1
-      ? `Готово! Зловив задач: ${voice.drafts.length} — перевір і тисни Додати`
-      : 'Зловив задачу! Перевір і додавай на дошку';
-    setVoiceView('review', `Знайдено задач: ${voice.drafts.length}`, reviewLine);
-    renderDrafts();
-    audioFx.playSuccess();
-  } catch (err) {
-    const msg = err?.message || 'Не вдалося розпізнати голос';
-    const needKey = msg.includes('Gemini API ключ');
-    showVoiceError(msg, needKey);
-    audioFx.playAlert();
+  if (!state.hasGeminiKey) {
+    return showVoiceError('Додайте безкоштовний Gemini API ключ у Налаштуваннях, щоб користуватись ШІ-асистентом.', true);
   }
+
+  voice.transcript = '';
+  voice.reply = '';
+  voice.actions = [];
+  const inp = $('aiCommandInput');
+  if (inp) inp.value = '';
+
+  setVoiceView('compose', 'ШІ-асистент');
+  openModal('voiceModal');
+  audioFx.playClick();
+  if (window.innerWidth > 720) setTimeout(() => inp?.focus(), 60);
 }
 
 export async function startVoiceRecording() {
@@ -206,7 +198,7 @@ export async function startVoiceRecording() {
 
     voice.startedAt = Date.now();
     $('voiceTimer').textContent = '00:00';
-    setVoiceView('recording', 'Голосовий бот');
+    setVoiceView('recording', 'Голосовий запис');
     openModal('voiceModal');
     voice.recorder.start();
     startVoiceVisualizer(voice.stream);
@@ -215,7 +207,7 @@ export async function startVoiceRecording() {
   } catch (err) {
     stopMediaTracks();
     const denied = err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError';
-    showVoiceError(denied ? 'Доступ до мікрофона заборонено. Дозвольте мікрофон у налаштуваннях Safari/браузера.' : 'Не вдалося увімкнути мікрофон.');
+    showVoiceError(denied ? 'Доступ до мікрофона заборонено. Дозвольте мікрофон у налаштуваннях браузера.' : 'Не вдалося увімкнути мікрофон.');
   }
 }
 
@@ -228,6 +220,16 @@ function stopRecording() {
   }
 }
 
+function cancelRecordingToCompose() {
+  voice.canceled = true;
+  if (voice.recorder && voice.recorder.state !== 'inactive') {
+    try { voice.recorder.stop(); } catch (_) {}
+  }
+  stopMediaTracks();
+  setVoiceView('compose', 'ШІ-асистент');
+  audioFx.playClick();
+}
+
 export function closeVoiceModal() {
   voice.canceled = true;
   if (voice.recorder && voice.recorder.state !== 'inactive') {
@@ -238,53 +240,27 @@ export function closeVoiceModal() {
   closeModal('voiceModal');
 }
 
-function saveVoiceDrafts() {
-  const { state, saveCache, render, syncCallbacks, nextTempRow } = voice.ctx;
-  const ready = voice.drafts.filter((d) => d.task.trim());
-  if (!ready.length) return showToast('Залиште хоча б одну задачу з назвою', 'error');
-
-  for (const d of ready) {
-    const serializedNotes = serializeTaskMeta({
-      cleanNotes: d.notes,
-      checklist: d.checklist.map((text) => ({ done: false, text })),
-      tags: extractTags(d.notes),
-      pinned: false,
-      repeat: { type: 'none', value: '' }
-    });
-    state.tasks.push({
-      row: nextTempRow(),
-      done: false,
-      sphere: d.sphere,
-      task: d.task.trim(),
-      status: d.status,
-      priority: d.priority,
-      deadline: d.deadline,
-      time: d.time,
-      notes: serializedNotes,
-      inCalendar: false
-    });
-    enqueueOfflineOrSend(state, {
-      action: 'create',
-      fields: {
-        sphere: d.sphere,
-        task: d.task.trim(),
-        status: d.status,
-        priority: d.priority,
-        deadline: d.deadline,
-        time: d.time,
-        notes: serializedNotes,
-        addToCalendar: false
-      },
-      successText: ready.length > 1 ? '' : 'Голосову задачу додано'
-    }, syncCallbacks);
+function submitTextCommand() {
+  const inp = $('aiCommandInput');
+  const text = String(inp?.value || '').trim();
+  if (!text) {
+    inp?.focus();
+    return showToast('Введіть команду або натисніть «Говорити»', 'error');
   }
+  audioFx.playClick();
+  sendAiCommand({ text });
+}
 
-  if (window.innerWidth < 960 && ready.length === 1) state.activeStatus = ready[0].status;
-  saveCache();
-  render();
+function confirmAndApplyActions() {
+  if (!voice.actions.length) return closeVoiceModal();
+  const res = applyAiActions(voice.actions, voice.ctx);
   closeVoiceModal();
   audioFx.playSuccess();
-  if (ready.length > 1) showToast(`Додано задач: ${ready.length}`, 'success');
+  if (res.appliedCount > 0) {
+    showToast(`Застосовано змін: ${res.appliedCount}`, 'success');
+  } else {
+    showToast('Зміни не застосовано (ціль не знайдено)', 'error');
+  }
 }
 
 export function initVoice(ctx) {
@@ -298,13 +274,22 @@ export function initVoice(ctx) {
     });
   }
 
-  $('btnVoice')?.addEventListener('click', startVoiceRecording);
+  $('btnVoice')?.addEventListener('click', openAiAssistant);
+  $('btnAiSend')?.addEventListener('click', submitTextCommand);
+  $('btnAiMic')?.addEventListener('click', startVoiceRecording);
+  $('aiCommandInput')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitTextCommand();
+    }
+  });
+
   $('btnVoiceStop')?.addEventListener('click', stopRecording);
-  $('btnVoiceCancel')?.addEventListener('click', closeVoiceModal);
+  $('btnVoiceCancel')?.addEventListener('click', cancelRecordingToCompose);
   $('btnCloseVoiceModal')?.addEventListener('click', closeVoiceModal);
-  $('btnVoiceRetry')?.addEventListener('click', startVoiceRecording);
-  $('btnVoiceRetryErr')?.addEventListener('click', startVoiceRecording);
-  $('btnVoiceSave')?.addEventListener('click', saveVoiceDrafts);
+  $('btnVoiceRetry')?.addEventListener('click', openAiAssistant);
+  $('btnVoiceRetryErr')?.addEventListener('click', openAiAssistant);
+  $('btnVoiceSave')?.addEventListener('click', confirmAndApplyActions);
   $('btnVoiceOpenSettings')?.addEventListener('click', () => {
     closeVoiceModal();
     openSettingsModal(ctx);
@@ -317,23 +302,23 @@ export function initVoice(ctx) {
   const list = $('voiceDraftList');
   list?.addEventListener('input', (e) => {
     const inp = e.target.closest('[data-vd-title]');
-    if (inp && voice.drafts[Number(inp.dataset.vdTitle)]) {
-      voice.drafts[Number(inp.dataset.vdTitle)].task = inp.value;
+    if (inp && voice.actions[Number(inp.dataset.vdTitle)]) {
+      voice.actions[Number(inp.dataset.vdTitle)].task = inp.value;
     }
   });
   list?.addEventListener('change', (e) => {
     const sel = e.target.closest('select');
     if (!sel) return;
-    if (sel.dataset.vdSphere !== undefined) voice.drafts[Number(sel.dataset.vdSphere)].sphere = sel.value;
-    else if (sel.dataset.vdStatus !== undefined) voice.drafts[Number(sel.dataset.vdStatus)].status = sel.value;
-    else if (sel.dataset.vdPrio !== undefined) voice.drafts[Number(sel.dataset.vdPrio)].priority = sel.value;
+    if (sel.dataset.vdSphere !== undefined) voice.actions[Number(sel.dataset.vdSphere)].sphere = sel.value;
+    else if (sel.dataset.vdStatus !== undefined) voice.actions[Number(sel.dataset.vdStatus)].status = sel.value;
+    else if (sel.dataset.vdPrio !== undefined) voice.actions[Number(sel.dataset.vdPrio)].priority = sel.value;
   });
   list?.addEventListener('click', (e) => {
-    const del = e.target.closest('[data-vd-del]');
+    const del = e.target.closest('[data-ai-del]');
     if (!del) return;
-    voice.drafts.splice(Number(del.dataset.vdDel), 1);
+    voice.actions.splice(Number(del.dataset.aiDel), 1);
     audioFx.playClick();
-    if (!voice.drafts.length) closeVoiceModal();
-    else renderDrafts();
+    if (!voice.actions.length && !voice.reply) openAiAssistant();
+    else renderActionPreview();
   });
 }

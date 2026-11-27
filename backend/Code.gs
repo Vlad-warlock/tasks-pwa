@@ -149,6 +149,15 @@ function doPost(e) {
     }
   }
 
+  if (action === 'aiCommand') {
+    try {
+      const aiRes = handleAiCommand_(payload);
+      return jsonResponse_({ ok: true, transcript: aiRes.transcript, reply: aiRes.reply, actions: aiRes.actions });
+    } catch (err) {
+      return jsonResponse_({ ok: false, error: err && err.message ? err.message : 'Помилка ШІ-асистента' });
+    }
+  }
+
   if (action === 'setGeminiKey') {
     try {
       const keyRes = handleSetGeminiKey_(payload);

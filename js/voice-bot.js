@@ -1,18 +1,25 @@
-// Інтерактивний бот-компаньйон для голосового запису з живою візуалізацією гучності
+// Інтерактивний ШІ-компаньйон для голосового та текстового керування трекером
+
+const COMPOSE_GREETINGS = [
+  'Напиши або надиктуй команду — розберусь із дошкою та щоденником',
+  'На зв’язку! Створити, змінити, видалити чи підсумувати день?',
+  'Опиши, що поміняти — спочатку покажу прев’ю без ризику'
+];
 
 const REC_GREETINGS = [
-  'О, давай щось запишемо! Слухаю тебе',
-  'На зв’язку! Диктуй — розкладу по поличках',
-  'Готовий! Кажи, що додаємо на дошку'
+  'Слухаю тебе! Диктуй команду або список задач',
+  'Мікрофон активний! Кажи, що додати чи змінити',
+  'Готовий! Кажи голосом — зберу план дій'
 ];
 
 const POKE_LINES = [
-  'Хей! Мікрофон уже гріється, диктуй!',
-  'Піп-біп! Накидай задач на день',
-  'Я тут! Кажи справу — і полетіли'
+  'Хей! Можеш як написати, так і надиктувати голосом',
+  'Піп-біп! Жодного видалення без твого підтвердження',
+  'Я тут! Кидай команду — і полетіли'
 ];
 
 let greetIdx = 0;
+let composeIdx = 0;
 let pokeIdx = 0;
 let pokeTimer = null;
 let audioCtx = null;
@@ -23,7 +30,7 @@ let smoothLevel = 0;
 const smoothBars = [0.35, 0.5, 0.65, 0.5, 0.35];
 
 export const BOT_STAGE_HTML = `
-  <div class="voice-bot-stage" id="voiceBotStage" data-mood="recording">
+  <div class="voice-bot-stage" id="voiceBotStage" data-mood="compose">
     <button type="button" class="voice-bot-btn" id="voiceBotBtn" aria-label="Натисни на бота">
       <span class="voice-bot-halo" aria-hidden="true"></span>
       <svg class="voice-bot-svg" viewBox="0 0 96 96" width="88" height="88" aria-hidden="true">
@@ -44,7 +51,7 @@ export const BOT_STAGE_HTML = `
         </g>
       </svg>
     </button>
-    <div class="voice-bot-bubble" id="voiceBotBubble">О, давай щось запишемо!</div>
+    <div class="voice-bot-bubble" id="voiceBotBubble">Напиши або надиктуй команду — розберусь із дошкою</div>
   </div>
 `;
 
@@ -53,18 +60,20 @@ export function setBotMood(mood, customLine = '') {
   const bubble = document.getElementById('voiceBotBubble');
   if (!stage || !bubble) return;
 
-  stage.dataset.mood = mood || 'recording';
+  stage.dataset.mood = mood || 'compose';
   if (customLine) {
     bubble.textContent = customLine;
     return;
   }
 
-  if (mood === 'recording') {
+  if (mood === 'compose') {
+    bubble.textContent = COMPOSE_GREETINGS[composeIdx++ % COMPOSE_GREETINGS.length];
+  } else if (mood === 'recording') {
     bubble.textContent = REC_GREETINGS[greetIdx++ % REC_GREETINGS.length];
   } else if (mood === 'processing') {
-    bubble.textContent = 'Хм, розкладаю твої слова по колонках...';
+    bubble.textContent = 'Хм, аналізую дошку й готую план змін...';
   } else if (mood === 'review') {
-    bubble.textContent = 'Зловив задачі! Перевір перед додаванням';
+    bubble.textContent = 'План готовий! Перевір і підтвердь зміни';
   } else if (mood === 'error') {
     bubble.textContent = 'Ой, щось пішло не так... Спробуємо ще?';
   }
@@ -79,7 +88,8 @@ export function pokeBot() {
   void stage.offsetWidth;
   stage.classList.add('is-poked');
 
-  if (bubble && stage.dataset.mood === 'recording') {
+  const mood = stage.dataset.mood;
+  if (bubble && (mood === 'recording' || mood === 'compose')) {
     bubble.textContent = POKE_LINES[pokeIdx++ % POKE_LINES.length];
   }
 

@@ -15,10 +15,10 @@
   <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg">
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./styles.css?v=16">
-  <link rel="stylesheet" href="./board-views.css?v=16">
-  <link rel="stylesheet" href="./day-view.css?v=16">
-  <link rel="stylesheet" href="./mobile.css?v=16">
+  <link rel="stylesheet" href="./styles.css?v=17">
+  <link rel="stylesheet" href="./board-views.css?v=17">
+  <link rel="stylesheet" href="./day-view.css?v=17">
+  <link rel="stylesheet" href="./mobile.css?v=17">
 </head>
 <body>
   <header class="topbar">
@@ -521,11 +521,11 @@
     </div>
   </div>
 
-  <!-- Модальне вікно голосового введення -->
+  <!-- Модальне вікно ШІ-асистента -->
   <div class="modal-backdrop" id="voiceModal" hidden>
     <div class="modal-sheet voice-sheet" role="dialog" aria-modal="true" aria-labelledby="voiceModalTitle">
       <div class="modal-head">
-        <h2 class="modal-title" id="voiceModalTitle">Голосовий запис</h2>
+        <h2 class="modal-title" id="voiceModalTitle">ШІ-асистент</h2>
         <button type="button" class="icon-btn" id="btnCloseVoiceModal" aria-label="Закрити">
           <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <path d="M5 5l10 10M15 5L5 15"/>
@@ -536,7 +536,21 @@
       <div class="modal-body voice-modal-body">
         <div class="voice-bot-mount" id="voiceBotMount"></div>
 
-        <div class="voice-state-box" id="voiceRecView">
+        <div class="ai-compose-box" id="voiceComposeView">
+          <textarea id="aiCommandInput" class="ai-cmd-input" rows="2" placeholder="Наприклад: перенеси Bybit на завтра 18:00, видали ринок, фокус дня — закрити аудит..."></textarea>
+          <div class="ai-compose-actions">
+            <button type="button" class="btn btn-secondary ai-mic-btn" id="btnAiMic">
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="7" y="2.5" width="6" height="9.5" rx="3"/>
+                <path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v3"/>
+              </svg>
+              Говорити
+            </button>
+            <button type="button" class="btn btn-primary" id="btnAiSend">Надіслати</button>
+          </div>
+        </div>
+
+        <div class="voice-state-box" id="voiceRecView" hidden>
           <strong class="voice-timer" id="voiceTimer">00:00</strong>
           <div class="voice-rec-actions">
             <button type="button" class="btn btn-ghost" id="btnVoiceCancel">Скасувати</button>
@@ -552,8 +566,8 @@
           <p class="voice-transcript" id="voiceTranscript" hidden></p>
           <div class="voice-draft-list" id="voiceDraftList"></div>
           <div class="modal-actions">
-            <button type="button" class="btn btn-ghost" id="btnVoiceRetry">Перезаписати</button>
-            <button type="button" class="btn btn-primary" id="btnVoiceSave">Додати на дошку</button>
+            <button type="button" class="btn btn-ghost" id="btnVoiceRetry">Нова команда</button>
+            <button type="button" class="btn btn-primary" id="btnVoiceSave">Застосувати</button>
           </div>
         </div>
 
@@ -570,6 +584,6 @@
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
 
-  <script type="module" src="./js/app.js?v=16"></script>
+  <script type="module" src="./js/app.js?v=17"></script>
 </body>
 </html>

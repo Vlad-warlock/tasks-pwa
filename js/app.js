@@ -33,7 +33,7 @@ import {
   renderAll
 } from './ui.js';
 import { initMobileUx } from './mobile-ux.js';
-import { initVoice, startVoiceRecording, closeVoiceModal } from './voice.js';
+import { initVoice, openAiAssistant, closeVoiceModal } from './voice.js';
 import {
   initModals,
   openTaskModal,
@@ -442,7 +442,7 @@ function bindEvents() {
     if (!$('taskModal').hidden || !$('settingsModal').hidden || !$('voiceModal').hidden) return;
     if (e.key === '/') { e.preventDefault(); $('fieldSearch').focus(); }
     else if (e.code === 'KeyN') { e.preventDefault(); openTaskModal(appCtx, null); }
-    else if (e.code === 'KeyV') { e.preventDefault(); startVoiceRecording(); }
+    else if (e.code === 'KeyV') { e.preventDefault(); openAiAssistant(); }
     else if (e.code === 'KeyR') { e.preventDefault(); refreshFromServer(false); }
   });
 
