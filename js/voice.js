@@ -14,6 +14,7 @@ const MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'a
 const voice = {
   ctx: null,
   mode: 'idle',
+  minimized: false,
   recorder: null,
   stream: null,
   chunks: [],
@@ -26,6 +27,30 @@ const voice = {
   actions: []
 };
 
+function syncMiniControls() {
+  const isRec = voice.mode === 'recording';
+  const isBusy = voice.mode === 'processing';
+  const recEl = $('voiceMiniRec');
+  const micBtn = $('btnVoiceMiniMic');
+  const busyEl = $('voiceMiniBusy');
+  if (recEl) recEl.hidden = !isRec;
+  if (micBtn) micBtn.hidden = isRec || isBusy;
+  if (busyEl) busyEl.hidden = !isBusy;
+}
+
+function setVoiceMinimized(next) {
+  voice.minimized = Boolean(next);
+  $('voiceModal')?.classList.toggle('is-minimized', voice.minimized);
+  const btn = $('btnToggleVoiceMin');
+  if (btn) {
+    btn.title = voice.minimized ? 'Розгорнути ШІ-асистента' : 'Згорнути, щоб бачити дошку';
+    btn.setAttribute('aria-label', voice.minimized ? 'Розгорнути' : 'Згорнути');
+  }
+  const path = $('voiceMinIconPath');
+  if (path) path.setAttribute('d', voice.minimized ? 'M5 12.5l5-5 5 5' : 'M4.5 11.5h11');
+  syncMiniControls();
+}
+
 function setVoiceView(nextMode, titleText, botLine = '') {
   voice.mode = nextMode;
   $('voiceModalTitle').textContent = titleText;
@@ -37,6 +62,8 @@ function setVoiceView(nextMode, titleText, botLine = '') {
   $('voiceErrorView').hidden = nextMode !== 'error';
   $('voiceBotMount')?.classList.toggle('is-compact', nextMode === 'review');
   setBotMood(nextMode, botLine);
+  if (nextMode === 'review' || nextMode === 'error') setVoiceMinimized(false);
+  else syncMiniControls();
 }
 
 function stopMediaTracks() {
@@ -52,8 +79,11 @@ function updateTimerDisplay() {
   const sec = Math.max(0, Math.floor((Date.now() - voice.startedAt) / 1000));
   const mm = String(Math.floor(sec / 60)).padStart(2, '0');
   const ss = String(sec % 60).padStart(2, '0');
+  const timeStr = `${mm}:${ss}`;
   const el = $('voiceTimer');
-  if (el) el.textContent = `${mm}:${ss}`;
+  if (el) el.textContent = timeStr;
+  const miniEl = $('voiceMiniTimer');
+  if (miniEl) miniEl.textContent = timeStr;
   if (Date.now() - voice.startedAt >= MAX_RECORD_MS && voice.mode === 'recording') {
     stopRecording();
   }
@@ -152,12 +182,21 @@ export function openAiAssistant() {
     return showVoiceError('Додайте безкоштовний Gemini API ключ у Налаштуваннях, щоб користуватись ШІ-асистентом.', true);
   }
 
+  const modal = $('voiceModal');
+  if (modal && !modal.hidden && voice.minimized) {
+    setVoiceMinimized(false);
+    audioFx.playClick();
+    if (voice.mode === 'compose' && window.innerWidth > 720) setTimeout(() => $('aiCommandInput')?.focus(), 60);
+    return;
+  }
+
   voice.transcript = '';
   voice.reply = '';
   voice.actions = [];
   const inp = $('aiCommandInput');
   if (inp) inp.value = '';
 
+  setVoiceMinimized(false);
   setVoiceView('compose', 'ШІ-асистент');
   openModal('voiceModal');
   audioFx.playClick();
@@ -198,6 +237,7 @@ export async function startVoiceRecording() {
 
     voice.startedAt = Date.now();
     $('voiceTimer').textContent = '00:00';
+    if ($('voiceMiniTimer')) $('voiceMiniTimer').textContent = '00:00';
     setVoiceView('recording', 'Голосовий запис');
     openModal('voiceModal');
     voice.recorder.start();
@@ -237,6 +277,7 @@ export function closeVoiceModal() {
   }
   stopMediaTracks();
   voice.mode = 'idle';
+  setVoiceMinimized(false);
   closeModal('voiceModal');
 }
 
@@ -285,6 +326,12 @@ export function initVoice(ctx) {
   });
 
   $('btnVoiceStop')?.addEventListener('click', stopRecording);
+  $('btnVoiceMiniStop')?.addEventListener('click', stopRecording);
+  $('btnVoiceMiniMic')?.addEventListener('click', startVoiceRecording);
+  $('btnToggleVoiceMin')?.addEventListener('click', () => {
+    audioFx.playClick();
+    setVoiceMinimized(!voice.minimized);
+  });
   $('btnVoiceCancel')?.addEventListener('click', cancelRecordingToCompose);
   $('btnCloseVoiceModal')?.addEventListener('click', closeVoiceModal);
   $('btnVoiceRetry')?.addEventListener('click', openAiAssistant);
@@ -293,10 +340,6 @@ export function initVoice(ctx) {
   $('btnVoiceOpenSettings')?.addEventListener('click', () => {
     closeVoiceModal();
     openSettingsModal(ctx);
-  });
-
-  $('voiceModal')?.addEventListener('click', (e) => {
-    if (e.target === $('voiceModal') && voice.mode !== 'processing') closeVoiceModal();
   });
 
   const list = $('voiceDraftList');

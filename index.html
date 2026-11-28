@@ -15,10 +15,10 @@
   <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg">
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./styles.css?v=19">
-  <link rel="stylesheet" href="./board-views.css?v=19">
-  <link rel="stylesheet" href="./day-view.css?v=19">
-  <link rel="stylesheet" href="./mobile.css?v=19">
+  <link rel="stylesheet" href="./styles.css?v=20">
+  <link rel="stylesheet" href="./board-views.css?v=20">
+  <link rel="stylesheet" href="./day-view.css?v=20">
+  <link rel="stylesheet" href="./mobile.css?v=20">
 </head>
 <body>
   <header class="topbar">
@@ -521,16 +521,40 @@
     </div>
   </div>
 
-  <!-- Модальне вікно ШІ-асистента -->
-  <div class="modal-backdrop" id="voiceModal" hidden>
-    <div class="modal-sheet voice-sheet" role="dialog" aria-modal="true" aria-labelledby="voiceModalTitle">
-      <div class="modal-head">
-        <h2 class="modal-title" id="voiceModalTitle">ШІ-асистент</h2>
-        <button type="button" class="icon-btn" id="btnCloseVoiceModal" aria-label="Закрити">
-          <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="M5 5l10 10M15 5L5 15"/>
-          </svg>
-        </button>
+  <!-- Плаваюче вікно ШІ-асистента -->
+  <div class="modal-backdrop voice-dock-backdrop" id="voiceModal" hidden>
+    <div class="modal-sheet voice-sheet" role="dialog" aria-modal="false" aria-labelledby="voiceModalTitle">
+      <div class="modal-head voice-head">
+        <div class="voice-head-left">
+          <h2 class="modal-title" id="voiceModalTitle">ШІ-асистент</h2>
+          <div class="voice-mini-bar" id="voiceMiniBar">
+            <span class="voice-mini-rec" id="voiceMiniRec" hidden>
+              <span class="voice-rec-dot" aria-hidden="true"></span>
+              <strong class="voice-mini-timer" id="voiceMiniTimer">00:00</strong>
+              <button type="button" class="btn btn-primary voice-mini-btn" id="btnVoiceMiniStop">Готово</button>
+            </span>
+            <button type="button" class="btn btn-secondary voice-mini-btn" id="btnVoiceMiniMic" title="Продиктувати команду">
+              <svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="7" y="2.5" width="6" height="9.5" rx="3"/>
+                <path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v3"/>
+              </svg>
+              Говорити
+            </button>
+            <span class="voice-mini-busy" id="voiceMiniBusy" hidden>Аналізую…</span>
+          </div>
+        </div>
+        <div class="modal-head-right">
+          <button type="button" class="icon-btn" id="btnToggleVoiceMin" aria-label="Згорнути" title="Згорнути, щоб бачити дошку">
+            <svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <path id="voiceMinIconPath" d="M4.5 11.5h11"/>
+            </svg>
+          </button>
+          <button type="button" class="icon-btn" id="btnCloseVoiceModal" aria-label="Закрити" title="Закрити">
+            <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M5 5l10 10M15 5L5 15"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div class="modal-body voice-modal-body">
@@ -584,6 +608,6 @@
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
 
-  <script type="module" src="./js/app.js?v=19"></script>
+  <script type="module" src="./js/app.js?v=20"></script>
 </body>
 </html>
