@@ -12,7 +12,7 @@ import {
   normalizeStatus,
   reconcileClientDoneStatus
 } from './utils.js';
-import { normalizeJournal, createDayEventController, setDaySaveHint } from './day-view.js';
+import { normalizeJournal, createDayEventController } from './day-view.js';
 import { parseTaskMeta, serializeTaskMeta } from './notes-meta.js';
 import { audioFx, initTactile3D } from './fx.js';
 import { initTimersDock } from './timers-dock.js';
@@ -118,10 +118,10 @@ const syncCallbacks = {
     updateLastSyncText(state.lastSyncAt);
   },
   onJournalUpdated: (journal) => {
-    const busy = isEditingInBoard() || dayCtrlRef?.hasPendingEdits();
+    const busy = isEditingInBoard() || Boolean(dayCtrlRef?.hasPendingEdits?.());
     if (journal && !busy) state.journal = normalizeJournal(journal);
     saveJournalCache();
-    if (!dayCtrlRef?.hasPendingEdits()) setDaySaveHint('Збережено', 'saved');
+    if (!dayCtrlRef?.hasPendingEdits?.()) dayCtrlRef?.setSaveHint?.('Збережено', 'saved');
     if (!busy && state.activeView !== 'day') safeBackgroundRender();
   },
   onArchivedUpdated: (archived) => {
@@ -167,7 +167,7 @@ async function refreshFromServer(silent = false) {
     if (telegram) state.telegram = telegram;
     state.isInitialLoading = false;
     if (state.inFlightCount === 0 && state.pendingQueue.length === 0) {
-      const busy = isEditingInBoard() || dayCtrlRef?.hasPendingEdits();
+      const busy = isEditingInBoard() || Boolean(dayCtrlRef?.hasPendingEdits?.());
       state.tasks = fresh;
       if (Array.isArray(archived)) state.archivedTasks = archived;
       if (journal && !busy) { state.journal = normalizeJournal(journal); saveJournalCache(); }

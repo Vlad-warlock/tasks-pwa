@@ -411,5 +411,5 @@ export function createDayEventController(board, appCtx) {
     if (act === 'jump-day') { state.activeView = 'day'; state.dayDate = getTodayLocal().date; audioFx.playClick(); return render(); }
   }
 
-  return { flush, handleAction, hasPendingEdits: () => Boolean(dayTimer || metaTimer) };
+  return { flush, handleAction, hasPendingEdits: () => Boolean(dayTimer || metaTimer), setSaveHint: setDaySaveHint };
 }

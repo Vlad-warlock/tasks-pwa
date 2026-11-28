@@ -1,11 +1,11 @@
-const CACHE_NAME = 'tasks-pwa-v18';
+const CACHE_NAME = 'tasks-pwa-v19';
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css?v=18',
-  './board-views.css?v=18',
-  './day-view.css?v=18',
-  './mobile.css?v=18',
+  './styles.css?v=19',
+  './board-views.css?v=19',
+  './day-view.css?v=19',
+  './mobile.css?v=19',
   './js/utils.js',
   './js/notes-meta.js',
   './js/fx.js',
@@ -22,7 +22,7 @@ const APP_SHELL = [
   './js/telegram-ui.js',
   './js/ui.js',
   './js/modals.js',
-  './js/app.js?v=18',
+  './js/app.js?v=19',
   './manifest.json',
   './icons/favicon.svg',
   './icons/icon-192.png',
@@ -63,10 +63,10 @@ self.addEventListener('fetch', (event) => {
     url.pathname.endsWith('/') ||
     /\.(html|css|js)$/i.test(url.pathname);
 
-  // Network-first для HTML, CSS та JS, щоб код і стилі завжди оновлювалися синхронно
+  // Network-first із ревалідацією (cache: 'no-cache'), щоб JS-модулі не розсинхронізовувались через HTTP-кеш GitHub Pages
   if (isCodeAsset) {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-cache' })
         .then((res) => {
           if (res && res.status === 200 && res.type === 'basic') {
             const copy = res.clone();
