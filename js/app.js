@@ -12,7 +12,7 @@ import {
   normalizeStatus,
   reconcileClientDoneStatus
 } from './utils.js';
-import { normalizeJournal, createDayEventController } from './day-view.js';
+import { normalizeJournal, createDayEventController, setDaySaveHint } from './day-view.js';
 import { parseTaskMeta, serializeTaskMeta } from './notes-meta.js';
 import { audioFx, initTactile3D } from './fx.js';
 import { initTimersDock } from './timers-dock.js';
@@ -79,16 +79,21 @@ const state = {
   deleteConfirmTimer: null,
   logoutConfirmTimer: null,
   archiveConfirmTimer: null,
-  inFlightCount: 0
+  inFlightCount: 0,
+  queueBlocked: false
 };
 
 let tempRowSeq = -1;
 let draggedRow = null;
+let dayCtrlRef = null;
+let deferredRender = false;
 const pendingDeleteTimers = new Map();
 
 const saveCache = () => saveJson(STORAGE_CACHE, { tasks: state.tasks, archivedTasks: state.archivedTasks, lastSyncAt: state.lastSyncAt, hasGeminiKey: state.hasGeminiKey, telegram: state.telegram });
 const saveJournalCache = () => saveJson(STORAGE_JOURNAL, state.journal);
 const render = () => renderAll(state);
+const isEditingInBoard = () => Boolean(document.activeElement && $('board')?.contains(document.activeElement) && document.activeElement.closest('input, textarea, select, [contenteditable="true"]'));
+const safeBackgroundRender = () => { if (isEditingInBoard()) { deferredRender = true; return; } deferredRender = false; render(); };
 const findTaskByRow = (row) => state.tasks.find((t) => t.row === Number(row));
 
 function updateStoredSheetUrl(nextSheetUrl) {
@@ -101,7 +106,7 @@ function updateStoredSheetUrl(nextSheetUrl) {
 const syncCallbacks = {
   onSyncIndicator: setSyncIndicator,
   onToast: (msg, kind) => showToast(msg, kind),
-  onQueueChange: () => updatePendingBadge(state.pendingQueue.length),
+  onQueueChange: () => updatePendingBadge(state.pendingQueue.length, state.queueBlocked),
   onSheetUrl: (url) => updateStoredSheetUrl(url),
   onOfflineQueued: () => {
     setSyncIndicator('error', `Офлайн: у черзі ${state.pendingQueue.length}`);
@@ -109,17 +114,18 @@ const syncCallbacks = {
   },
   onTasksUpdated: () => {
     saveCache();
-    render();
+    safeBackgroundRender();
     updateLastSyncText(state.lastSyncAt);
   },
   onJournalUpdated: (journal) => {
-    const editingDay = document.activeElement?.closest('[data-day-field], [data-habit-rename]');
-    if (journal && !editingDay) state.journal = normalizeJournal(journal);
+    const busy = isEditingInBoard() || dayCtrlRef?.hasPendingEdits();
+    if (journal && !busy) state.journal = normalizeJournal(journal);
     saveJournalCache();
-    if (!editingDay) render();
+    if (!dayCtrlRef?.hasPendingEdits()) setDaySaveHint('Збережено', 'saved');
+    if (!busy && state.activeView !== 'day') safeBackgroundRender();
   },
   onArchivedUpdated: (archived) => {
-    if (Array.isArray(archived)) { state.archivedTasks = archived; saveCache(); render(); }
+    if (Array.isArray(archived)) { state.archivedTasks = archived; saveCache(); safeBackgroundRender(); }
   }
 };
 
@@ -161,12 +167,13 @@ async function refreshFromServer(silent = false) {
     if (telegram) state.telegram = telegram;
     state.isInitialLoading = false;
     if (state.inFlightCount === 0 && state.pendingQueue.length === 0) {
+      const busy = isEditingInBoard() || dayCtrlRef?.hasPendingEdits();
       state.tasks = fresh;
       if (Array.isArray(archived)) state.archivedTasks = archived;
-      if (journal) { state.journal = normalizeJournal(journal); saveJournalCache(); }
+      if (journal && !busy) { state.journal = normalizeJournal(journal); saveJournalCache(); }
       state.lastSyncAt = Date.now();
       saveCache();
-      render();
+      safeBackgroundRender();
     }
     setSyncIndicator('ok', 'Синхронізовано');
     updateLastSyncText(state.lastSyncAt);
@@ -174,7 +181,7 @@ async function refreshFromServer(silent = false) {
     return true;
   } catch (err) {
     state.isInitialLoading = false;
-    render();
+    safeBackgroundRender();
     setSyncIndicator('error', err.message || 'Помилка з’єднання');
     showToast(err.message || 'Не вдалося завантажити задачі', 'error');
     return false;
@@ -294,7 +301,8 @@ function syncCardToCalendar(row) {
 
 function bindEvents() {
   const board = $('board');
-  const dayCtrl = createDayEventController(board, { state, render, syncCallbacks, onToast: showToast });
+  const dayCtrl = (dayCtrlRef = createDayEventController(board, { state, render, syncCallbacks, onToast: showToast }));
+  board.addEventListener('focusout', () => { if (deferredRender) setTimeout(() => { if (deferredRender && !isEditingInBoard()) { deferredRender = false; render(); } }, 0); });
 
   $('viewSwitcher').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-view]');

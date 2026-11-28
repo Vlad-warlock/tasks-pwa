@@ -120,6 +120,8 @@ export function enqueueOfflineOrSend(state, item, callbacks) {
   callbacks.onQueueChange();
 
   if (!navigator.onLine) {
+    state.queueBlocked = true;
+    callbacks.onQueueChange();
     callbacks.onOfflineQueued();
     return Promise.resolve(false);
   }
@@ -134,8 +136,11 @@ export function flushQueue(state, callbacks) {
 
   mutationChain = mutationChain.catch(() => {}).then(async () => {
     let syncedAny = false;
+    let tasksChanged = false;
     while (state.pendingQueue.length > 0) {
       if (!navigator.onLine) {
+        state.queueBlocked = true;
+        callbacks.onQueueChange();
         callbacks.onSyncIndicator('error', `Офлайн: у черзі ${state.pendingQueue.length}`);
         break;
       }
@@ -146,7 +151,11 @@ export function flushQueue(state, callbacks) {
 
       try {
         const data = await apiPost(state.config, buildItemPayload(current));
-        if (Array.isArray(data.tasks)) lastServerSnapshot = data.tasks;
+        state.queueBlocked = false;
+        if (Array.isArray(data.tasks)) {
+          lastServerSnapshot = data.tasks;
+          tasksChanged = true;
+        }
         if (Array.isArray(data.archivedTasks)) lastArchivedSnapshot = data.archivedTasks;
         if (data.journal) lastJournalSnapshot = data.journal;
         if (data.sheetUrl && callbacks.onSheetUrl) callbacks.onSheetUrl(data.sheetUrl);
@@ -169,6 +178,8 @@ export function flushQueue(state, callbacks) {
         callbacks.onQueueChange();
       } catch (err) {
         if (!err.isServerError) {
+          state.queueBlocked = true;
+          callbacks.onQueueChange();
           callbacks.onSyncIndicator('error', `Немає зв’язку: у черзі ${state.pendingQueue.length}`);
           if (navigator.onLine) callbacks.onToast('Немає зв’язку з таблицею. Зміни в офлайн-черзі.', 'error');
           break;
@@ -189,7 +200,9 @@ export function flushQueue(state, callbacks) {
     }
 
     if (state.pendingQueue.length === 0) {
-      if (lastServerSnapshot) {
+      state.queueBlocked = false;
+      callbacks.onQueueChange();
+      if (tasksChanged && lastServerSnapshot) {
         state.tasks = lastServerSnapshot;
         callbacks.onTasksUpdated();
       }

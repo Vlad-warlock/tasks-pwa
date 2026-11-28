@@ -21,7 +21,7 @@ function normalizeMonthTextMap(raw) {
   const out = {};
   if (raw && typeof raw === 'object') {
     for (const [k, v] of Object.entries(raw)) {
-      if (/^\d{4}-\d{2}$/.test(k) && String(v || '').trim()) out[k] = String(v).trim();
+      if (/^\d{4}-\d{2}$/.test(k) && String(v || '').trim()) out[k] = String(v);
     }
   }
   return out;
@@ -78,15 +78,15 @@ export function updateDayEntryFields(journal, dateStr, patch) {
 }
 
 export function updateMonthFocus(journal, ymKey, text) {
-  const clean = String(text || '').trim();
-  if (clean) journal.monthFocus[ymKey] = clean;
+  const raw = String(text || '');
+  if (raw.trim()) journal.monthFocus[ymKey] = raw;
   else delete journal.monthFocus[ymKey];
 }
 
 export function updateMonthReview(journal, ymKey, text) {
   if (!journal.monthReview) journal.monthReview = {};
-  const clean = String(text || '').trim();
-  if (clean) journal.monthReview[ymKey] = clean;
+  const raw = String(text || '');
+  if (raw.trim()) journal.monthReview[ymKey] = raw;
   else delete journal.monthReview[ymKey];
 }
 

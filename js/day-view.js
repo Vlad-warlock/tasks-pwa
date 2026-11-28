@@ -277,6 +277,15 @@ export function renderDayView(state, nowInfo) {
     </div>`;
 }
 
+const AUTOSAVE_DEBOUNCE_MS = 2500;
+
+export function setDaySaveHint(text, mode = '') {
+  const el = document.querySelector('.day-save-hint');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'day-save-hint' + (mode ? ` is-${mode}` : '');
+}
+
 export function createDayEventController(board, appCtx) {
   const { state, render, syncCallbacks, onToast } = appCtx;
   const saveJournal = () => saveJson(STORAGE_JOURNAL, state.journal);
@@ -285,6 +294,7 @@ export function createDayEventController(board, appCtx) {
 
   function sendDay(dateStr) {
     if (!hasValidConfig(state.config)) return;
+    setDaySaveHint('Збереження…', 'saving');
     const e = getOrCreateDayEntry(state.journal, dateStr);
     enqueueOfflineOrSend(state, {
       action: 'saveJournalDay',
@@ -294,6 +304,7 @@ export function createDayEventController(board, appCtx) {
 
   function sendMeta() {
     if (!hasValidConfig(state.config)) return;
+    setDaySaveHint('Збереження…', 'saving');
     enqueueOfflineOrSend(state, {
       action: 'saveJournalMeta',
       fields: { habits: state.journal.habits, monthFocus: state.journal.monthFocus, monthReview: state.journal.monthReview || {} }
@@ -332,22 +343,25 @@ export function createDayEventController(board, appCtx) {
         if (key === 'monthFocus') updateMonthFocus(state.journal, dayField.dataset.ym, dayField.value);
         else updateMonthReview(state.journal, dayField.dataset.ym, dayField.value);
         saveJournal();
+        setDaySaveHint('Збереження…', 'saving');
         clearTimeout(metaTimer);
-        metaTimer = setTimeout(() => { metaTimer = null; sendMeta(); }, 600);
+        metaTimer = setTimeout(() => { metaTimer = null; sendMeta(); }, AUTOSAVE_DEBOUNCE_MS);
       } else {
         updateDayEntryFields(state.journal, state.dayDate, { [key]: dayField.value });
         saveJournal();
+        setDaySaveHint('Збереження…', 'saving');
         const targetDate = state.dayDate;
         clearTimeout(dayTimer);
-        dayTimer = setTimeout(() => { dayTimer = null; sendDay(targetDate); }, 600);
+        dayTimer = setTimeout(() => { dayTimer = null; sendDay(targetDate); }, AUTOSAVE_DEBOUNCE_MS);
       }
       return;
     }
     const renameInp = e.target.closest('[data-habit-rename]');
     if (renameInp && renameCustomHabit(state.journal, renameInp.dataset.habitRename, renameInp.value)) {
       saveJournal();
+      setDaySaveHint('Збереження…', 'saving');
       clearTimeout(metaTimer);
-      metaTimer = setTimeout(() => { metaTimer = null; sendMeta(); }, 600);
+      metaTimer = setTimeout(() => { metaTimer = null; sendMeta(); }, AUTOSAVE_DEBOUNCE_MS);
     }
   });
 
@@ -397,5 +411,5 @@ export function createDayEventController(board, appCtx) {
     if (act === 'jump-day') { state.activeView = 'day'; state.dayDate = getTodayLocal().date; audioFx.playClick(); return render(); }
   }
 
-  return { flush, handleAction };
+  return { flush, handleAction, hasPendingEdits: () => Boolean(dayTimer || metaTimer) };
 }

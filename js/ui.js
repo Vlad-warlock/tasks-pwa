@@ -37,11 +37,12 @@ export function updateLastSyncText(lastSyncAt) {
   el.textContent = `Оновлено о ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
 }
 
-export function updatePendingBadge(count) {
+export function updatePendingBadge(count, isBlocked = false) {
   const badge = $('pendingBadge');
   if (!badge) return;
-  badge.hidden = count === 0;
-  badge.textContent = `У черзі: ${count}`;
+  const shouldShow = count > 0 && (isBlocked || !navigator.onLine);
+  badge.hidden = !shouldShow;
+  if (shouldShow) badge.textContent = `У черзі: ${count}`;
 }
 
 export function showToast(message, kind = '', actionOpts = null) {
@@ -301,7 +302,7 @@ export function renderAll(state) {
     if (countEl) countEl.textContent = String(filtered.filter((t) => t.status === st).length);
   });
 
-  updatePendingBadge(state.pendingQueue.length);
+  updatePendingBadge(state.pendingQueue.length, state.queueBlocked);
 
   const bannerSlot = $('focusBannerSlot');
   if (bannerSlot) {
